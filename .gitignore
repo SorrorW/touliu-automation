@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project temp / debug outputs
+tmp/*.png
+tmp/*.txt
+
+# ---- 投流项目私有配置与运行数据（绝不提交）----
+config.local.json
+webui/assets/
+*.xlsx
+*_state.json
+dry_run_*.json
+*.log
