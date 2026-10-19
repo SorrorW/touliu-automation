@@ -1,40 +1,40 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1800" height="2780" viewBox="0 0 1800 2780">
 <rect width="1800" height="2780" fill="#f5f7fa"/>
 <text x="80" y="54" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="55" font-weight="600" fill="#142d44">四主品达人授权与加入计划</text>
-<text x="80" y="136" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="30" font-weight="400" fill="#4a5f70">同事沟通版  /  按商品匹配，统一主号处理</text>
+<text x="80" y="136" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="30" font-weight="400" fill="#4a5f70">先查主号是否已自动拉取，未拉取才授权</text>
 <rect x="80" y="202" width="1640" height="148" rx="18" fill="#e8eff5" stroke="none" stroke-width="2"/>
-<text x="108" y="225" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="34" font-weight="600" fill="#235c88">授权账号：鲜会鲜主号    ｜    类型：合作达人（含矩阵来源）</text>
+<text x="108" y="225" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="34" font-weight="600" fill="#235c88">查询与授权统一走鲜会鲜主号    ｜    合作达人（含矩阵来源）</text>
 <text x="108" y="284" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="29" font-weight="400" fill="#142d44">肥牛主品  ·  牛仔骨  ·  上脑  ·  牛板腱     业务部 / 业务员仅作归属统计</text>
 <text x="85" y="379" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="27" font-weight="600" fill="#235c88">主流程</text>
 <text x="1210" y="379" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="27" font-weight="600" fill="#4a5f70">分支结果与后续处理</text>
 <rect x="80" y="428" width="980" height="150" rx="18" fill="#ffffff" stroke="#d6e0e7" stroke-width="2"/>
 <rect x="104" y="453" width="59" height="59" rx="16" fill="#235c88" stroke="none" stroke-width="2"/>
 <text x="119" y="461" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="34" font-weight="600" fill="#ffffff">1</text>
-<text x="185" y="453" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="35" font-weight="600" fill="#142d44">业务同事填表</text>
-<text x="185" y="505" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="28" font-weight="400" fill="#4a5f70">主表 / 旧素材表均可；填写达人账号、合作码、</text>
-<text x="185" y="544" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="28" font-weight="400" fill="#4a5f70">商品ID、实际投放日期，并维护可处理状态。</text>
+<text x="185" y="453" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="35" font-weight="600" fill="#142d44">读取表格，按商品ID匹配对应主品</text>
+<text x="185" y="505" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="28" font-weight="400" fill="#4a5f70">填写达人账号、合作码、商品ID、实际投放日期。</text>
+<text x="185" y="544" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="28" font-weight="400" fill="#4a5f70">先做资料和停投基础校验，再查对应主品计划。</text>
 <rect x="80" y="638" width="980" height="150" rx="18" fill="#ffffff" stroke="#d6e0e7" stroke-width="2"/>
 <rect x="104" y="663" width="59" height="59" rx="16" fill="#235c88" stroke="none" stroke-width="2"/>
 <text x="119" y="671" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="34" font-weight="600" fill="#ffffff">2</text>
-<text x="185" y="663" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="35" font-weight="600" fill="#142d44">检查商品、资料与人工停投要求</text>
-<text x="185" y="715" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="28" font-weight="400" fill="#4a5f70">按商品ID匹配四主品；核对达人资料和停投备注。</text>
-<text x="185" y="754" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="28" font-weight="400" fill="#4a5f70">跨表同达人＋同主品只做一次，结果分别回写。</text>
+<text x="185" y="663" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="35" font-weight="600" fill="#142d44">先查主号：对应主品是否已自动拉取？</text>
+<text x="185" y="715" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="28" font-weight="400" fill="#4a5f70">完整读取主号对应主品计划，确认实际有效绑定。</text>
+<text x="185" y="754" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="28" font-weight="400" fill="#4a5f70">未拉取 / 已删除才往下走；查询不完整先复查。</text>
 <rect x="80" y="848" width="980" height="170" rx="18" fill="#ffffff" stroke="#d6e0e7" stroke-width="2"/>
 <rect x="104" y="873" width="59" height="59" rx="16" fill="#235c88" stroke="none" stroke-width="2"/>
 <text x="119" y="881" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="34" font-weight="600" fill="#ffffff">3</text>
-<text x="185" y="873" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="35" font-weight="600" fill="#142d44">完整查询对应主品计划：已有有效绑定？</text>
-<text x="185" y="925" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="28" font-weight="400" fill="#4a5f70">先核对主号、商品与计划，再读取完整达人名单。</text>
-<text x="185" y="964" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="28" font-weight="400" fill="#4a5f70">读取失败 / 分页不完整 → 暂挂复查，不当成未绑定。</text>
+<text x="185" y="873" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="35" font-weight="600" fill="#142d44">确认未拉取后，才进入授权条件检查</text>
+<text x="185" y="925" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="28" font-weight="400" fill="#4a5f70">再次确认资料有效、无明确人工停投要求。</text>
+<text x="185" y="964" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="28" font-weight="400" fill="#4a5f70">跨表同达人＋同主品只做一次，结果分别回写。</text>
 <rect x="80" y="1078" width="980" height="150" rx="18" fill="#ffffff" stroke="#d6e0e7" stroke-width="2"/>
 <rect x="104" y="1103" width="59" height="59" rx="16" fill="#235c88" stroke="none" stroke-width="2"/>
 <text x="119" y="1111" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="34" font-weight="600" fill="#ffffff">4</text>
-<text x="185" y="1103" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="35" font-weight="600" fill="#142d44">未绑定：先检查佣金限制</text>
+<text x="185" y="1103" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="35" font-weight="600" fill="#142d44">未拉取：检查佣金是否符合要求</text>
 <text x="185" y="1155" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="28" font-weight="400" fill="#4a5f70">当前上限5%；等于5%可以继续，超过上限暂不处理。</text>
-<text x="185" y="1194" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="28" font-weight="400" fill="#4a5f70">历史“已删除”关系按未绑定重新核验。</text>
+<text x="185" y="1194" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="28" font-weight="400" fill="#4a5f70">授权前再查一次，避免平台期间已自动拉取。</text>
 <rect x="80" y="1288" width="980" height="170" rx="18" fill="#ffffff" stroke="#d6e0e7" stroke-width="2"/>
 <rect x="104" y="1313" width="59" height="59" rx="16" fill="#235c88" stroke="none" stroke-width="2"/>
 <text x="119" y="1321" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="34" font-weight="600" fill="#ffffff">5</text>
-<text x="185" y="1313" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="35" font-weight="600" fill="#142d44">主号检查并补齐两项授权</text>
+<text x="185" y="1313" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="35" font-weight="600" fill="#142d44">仅未拉取的达人：主号检查并补齐授权</text>
 <text x="185" y="1365" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="28" font-weight="400" fill="#4a5f70">① 抖音号授权    ② 商品投放授权</text>
 <text x="185" y="1404" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="28" font-weight="400" fill="#4a5f70">已生效或已申请待确认的权限，均不重复提交。</text>
 <rect x="80" y="1518" width="980" height="150" rx="18" fill="#ffffff" stroke="#d6e0e7" stroke-width="2"/>
@@ -64,15 +64,15 @@
 <path d="M570 580 L570 631" fill="none" stroke="#9babba" stroke-width="4"/>
 <polygon points="570.0,631.0 563.5,619.7 576.5,619.7" fill="#9babba"/>
 <rect x="591" y="587" width="300" height="33" rx="4" fill="#f5f7fa" stroke="none" stroke-width="2"/>
-<text x="599" y="585" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="24" font-weight="400" fill="#4a5f70">进入候选</text>
+<text x="599" y="585" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="24" font-weight="400" fill="#4a5f70">先查主号拉取</text>
 <path d="M570 790 L570 841" fill="none" stroke="#9babba" stroke-width="4"/>
 <polygon points="570.0,841.0 563.5,829.7 576.5,829.7" fill="#9babba"/>
 <rect x="591" y="797" width="300" height="33" rx="4" fill="#f5f7fa" stroke="none" stroke-width="2"/>
-<text x="599" y="795" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="24" font-weight="400" fill="#4a5f70">符合处理条件</text>
+<text x="599" y="795" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="24" font-weight="400" fill="#4a5f70">未拉取 / 已删除</text>
 <path d="M570 1020 L570 1071" fill="none" stroke="#9babba" stroke-width="4"/>
 <polygon points="570.0,1071.0 563.5,1059.7 576.5,1059.7" fill="#9babba"/>
 <rect x="591" y="1027" width="300" height="33" rx="4" fill="#f5f7fa" stroke="none" stroke-width="2"/>
-<text x="599" y="1025" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="24" font-weight="400" fill="#4a5f70">未绑定 / 已删除</text>
+<text x="599" y="1025" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="24" font-weight="400" fill="#4a5f70">符合授权条件</text>
 <path d="M570 1230 L570 1281" fill="none" stroke="#9babba" stroke-width="4"/>
 <polygon points="570.0,1281.0 563.5,1269.7 576.5,1269.7" fill="#9babba"/>
 <rect x="591" y="1237" width="300" height="33" rx="4" fill="#f5f7fa" stroke="none" stroke-width="2"/>
@@ -93,23 +93,23 @@
 <polygon points="570.0,2161.0 563.5,2149.7 576.5,2149.7" fill="#9babba"/>
 <rect x="591" y="2117" width="300" height="33" rx="4" fill="#f5f7fa" stroke="none" stroke-width="2"/>
 <text x="599" y="2115" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="24" font-weight="400" fill="#4a5f70">已确认加入成功</text>
-<rect x="1210" y="638" width="510" height="150" rx="18" fill="#fff0ed" stroke="none" stroke-width="2"/>
-<text x="1234" y="661" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="31" font-weight="600" fill="#a34a42">转人工或保留原状态</text>
-<text x="1234" y="704" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="25" font-weight="400" fill="#142d44">非四主品 / 资料异常 / 停投</text>
-<text x="1234" y="737" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="25" font-weight="400" fill="#142d44">→ 待人工处理；历史已完成跳过。</text>
-<path d="M1060 713 L1205 713" fill="none" stroke="#a34a42" stroke-width="4"/>
-<polygon points="1205.0,713.0 1193.7,719.5 1193.7,706.5" fill="#a34a42"/>
+<rect x="1210" y="638" width="510" height="150" rx="18" fill="#eaf6f0" stroke="none" stroke-width="2"/>
+<text x="1234" y="661" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="31" font-weight="600" fill="#18745a">直接转第9步同步，不授权</text>
+<text x="1234" y="704" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="25" font-weight="400" fill="#142d44">自动拉取 → 主号已拉取</text>
+<text x="1234" y="737" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="25" font-weight="400" fill="#142d44">已有有效手动绑定 → 主号已加入</text>
+<path d="M1060 713 L1205 713" fill="none" stroke="#18745a" stroke-width="4"/>
+<polygon points="1205.0,713.0 1193.7,719.5 1193.7,706.5" fill="#18745a"/>
 <rect x="1088.0" y="668" width="90.0" height="34" rx="5" fill="#f5f7fa" stroke="none" stroke-width="2"/>
-<text x="1097.0" y="668" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="24" font-weight="400" fill="#a34a42">不符合</text>
-<rect x="1210" y="848" width="510" height="170" rx="18" fill="#eaf6f0" stroke="none" stroke-width="2"/>
-<text x="1234" y="871" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="31" font-weight="600" fill="#18745a">直接转第9步同步</text>
-<text x="1234" y="914" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="25" font-weight="400" fill="#142d44">自动拉取 → 主号已拉取</text>
-<text x="1234" y="947" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="25" font-weight="400" fill="#142d44">已有手动绑定 → 主号已加入</text>
-<text x="1234" y="980" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="25" font-weight="400" fill="#142d44">无需重新申请或重复添加。</text>
-<path d="M1060 933 L1205 933" fill="none" stroke="#18745a" stroke-width="4"/>
-<polygon points="1205.0,933.0 1193.7,939.5 1193.7,926.5" fill="#18745a"/>
-<rect x="1076.0" y="888" width="114.0" height="34" rx="5" fill="#f5f7fa" stroke="none" stroke-width="2"/>
-<text x="1085.0" y="888" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="24" font-weight="400" fill="#18745a">已有绑定</text>
+<text x="1097.0" y="668" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="24" font-weight="400" fill="#18745a">已拉取</text>
+<rect x="1210" y="848" width="510" height="170" rx="18" fill="#fff0ed" stroke="none" stroke-width="2"/>
+<text x="1234" y="871" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="31" font-weight="600" fill="#a34a42">转人工或保留原状态</text>
+<text x="1234" y="914" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="25" font-weight="400" fill="#142d44">非四主品 / 资料异常 / 停投</text>
+<text x="1234" y="947" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="25" font-weight="400" fill="#142d44">→ 待人工处理；历史分部已完成</text>
+<text x="1234" y="980" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="25" font-weight="400" fill="#142d44">记录不重新接管。</text>
+<path d="M1060 933 L1205 933" fill="none" stroke="#a34a42" stroke-width="4"/>
+<polygon points="1205.0,933.0 1193.7,939.5 1193.7,926.5" fill="#a34a42"/>
+<rect x="1088.0" y="888" width="90.0" height="34" rx="5" fill="#f5f7fa" stroke="none" stroke-width="2"/>
+<text x="1097.0" y="888" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="24" font-weight="400" fill="#a34a42">不符合</text>
 <rect x="1210" y="1078" width="510" height="150" rx="18" fill="#fff0ed" stroke="none" stroke-width="2"/>
 <text x="1234" y="1101" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="31" font-weight="600" fill="#a34a42">佣金过高</text>
 <text x="1234" y="1144" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="25" font-weight="400" fill="#142d44">先确认佣金条件，调整完成后</text>
@@ -162,7 +162,7 @@
 <text x="1085.0" y="2208" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="24" font-weight="400" fill="#235c88">回写失败</text>
 <rect x="80" y="2420" width="1640" height="264" rx="18" fill="#e8eff5" stroke="none" stroke-width="2"/>
 <text x="108" y="2446" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="34" font-weight="600" fill="#235c88">同事需要记住的三件事</text>
-<text x="108" y="2510" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="30" font-weight="400" fill="#142d44">1. 填对商品ID；一个达人多个主品，要分别看对应计划的结果。</text>
+<text x="108" y="2510" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="30" font-weight="400" fill="#142d44">1. 先看主号对应主品是否已拉取；已拉取直接同步，未拉取才走授权。</text>
 <text x="108" y="2562" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="30" font-weight="400" fill="#142d44">2. “等待达人接受 / 待加入主品”是中间状态，不等于投放失败或已成功加入。</text>
 <text x="108" y="2614" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="30" font-weight="400" fill="#142d44">3. 桌面与自动化需保持开启；系统随轮询接续处理，异常记录保留具体原因。</text>
 <text x="80" y="2716" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="400" fill="#4a5f70">范围：表格达人授权与加入主品计划。原分部计划的ROI、预算、日报和收口沿原规则执行。</text>
