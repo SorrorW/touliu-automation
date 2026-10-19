@@ -1,0 +1,3 @@
+$names = @('wecom_report_morning','wecom_report_10am','wecom_report_noon','wecom_report_14pm','wecom_report_16pm','wecom_evening_closeout','wecom_report_night')
+$out = foreach($n in $names){ try { $t=Get-ScheduledTask -TaskName $n -ErrorAction Stop; $i=Get-ScheduledTaskInfo -TaskName $n -ErrorAction Stop; [pscustomobject]@{TaskName=$n;State=$t.State;LastRun=$i.LastRunTime;NextRun=$i.NextRunTime;Result=$i.LastTaskResult} } catch { [pscustomobject]@{TaskName=$n;Error=$_.Exception.Message} } }
+$out | ConvertTo-Json | Set-Content -LiteralPath 'D:\Documents\SR_Project\????\wecom-agent\task_verify.json' -Encoding UTF8

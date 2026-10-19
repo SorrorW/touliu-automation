@@ -1,0 +1,6 @@
+config.json
+local_pending_tasks.json
+local_task_snapshot_*.json
+manual_creator_whitelist.json
+__pycache__/
+*.pyc

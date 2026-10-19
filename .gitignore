@@ -1,33 +1,42 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-
-# Virtual environments
+# Local environments and dependencies
 .venv/
 venv/
 env/
-
-# IDE / Editor
+**/runtime/
+**/node_modules/
+**/__pycache__/
+*.py[cod]
+.repo-sync/
+# Credentials and business runtime data
+.env
+.env.*
+*.pem
+*.key
+*.pfx
+**/config.local.json
+/wecom-agent/*.json
+!/wecom-agent/main_authorization_rollout.json
+/wecom-agent/config.json
+/wecom-agent/logs/
+/投流/巨量千川/*.json
+/投流/webui/assets/*
+!/投流/webui/assets/touliu.ico
+*.db
+*.db.*
+*.db-*
+*.sqlite*
+*.log
+*.lock
+*.bak*
+**/logs/
+**/backups/
+# Local verification artifacts contain business records
+/docs/main-account-migration/*.json
+/docs/main-account-migration/preview.md
+/docs/main-account-migration/execution-summary.md
+/docs/main-account-migration/devtools/implementation/
+# Editors and OS
 .vscode/
 .idea/
-*.swp
-*.swo
-*~
-
-# OS
 .DS_Store
 Thumbs.db
-
-# Project temp / debug outputs
-tmp/*.png
-tmp/*.txt
-
-# ---- 投流项目私有配置与运行数据（绝不提交）----
-config.local.json
-webui/assets/
-*.xlsx
-*_state.json
-dry_run_*.json
-*.log
