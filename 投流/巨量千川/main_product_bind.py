@@ -1,4 +1,4 @@
-"""只对四个既有主品计划添加达人；不新建、不改投放参数或启停状态。"""
+"""只对四个既有主品计划添加达人；取消含达人佣金，不改ROI、预算或启停状态。"""
 from __future__ import annotations
 import argparse
 import asyncio
@@ -36,12 +36,53 @@ async def open_editor(page, route):
     }""",arg=route.product_id,timeout=15000)
     await assert_editor(page, route)
 
-async def parameter_snapshot(page):
-    """记录非达人抽屉中的输入/开关，添加前后必须相同。"""
-    return await page.evaluate("""() => [...document.querySelectorAll('input,textarea,select,[role="switch"]')]
-      .filter(e => e.offsetWidth && !e.closest('.ovui-drawer'))
+async def commission_checkbox(page):
+    """从精确文案定位其自己的复选框，禁止从整页取第一个 checkbox。"""
+    labels=page.get_by_text(re.compile(r'^含达人佣金(?:出价)?$')).filter(visible=True)
+    if await labels.count()!=1:
+        raise RuntimeError('未找到唯一的含达人佣金出价开关，禁止保存')
+    handle=await labels.evaluate_handle("""el => {
+      let root=el.closest('label')||el;
+      for(let i=0;i<12&&root&&root!==document.body;i++,root=root.parentElement){
+        const checks=[...root.querySelectorAll('input[type="checkbox"]')];
+        if(root.matches('input[type="checkbox"]'))checks.unshift(root);
+        if(checks.length===1&&(root.innerText||'').trim().length<240)return checks[0];
+        if(checks.length>1)return null;
+      }
+      return null;
+    }""")
+    checkbox=handle.as_element()
+    if checkbox is None:raise RuntimeError('含达人佣金文案未关联唯一复选框，禁止保存')
+    return checkbox
+
+async def parameter_snapshot(page, *, ignore_commission=False):
+    """除本次明确允许取消的佣金开关外，其他投放字段必须保持一致。"""
+    commission=await commission_checkbox(page) if ignore_commission else None
+    return await page.evaluate("""commission => [...document.querySelectorAll('input,textarea,select,[role="switch"]')]
+      .filter(e => e.offsetWidth && !e.closest('.ovui-drawer') && e!==commission)
       .map(e => ({tag:e.tagName,type:e.type||'',placeholder:e.placeholder||'',
-        value:e.value??'',checked:e.checked??null,aria:e.getAttribute('aria-checked')}))""")
+        value:e.value??'',checked:e.checked??null,aria:e.getAttribute('aria-checked')}))""",commission)
+
+async def disable_commission_before_bind(page,route,params):
+    await assert_editor(page,route)
+    checkbox=await commission_checkbox(page)
+    changed=await checkbox.is_checked()
+    if changed:
+        await checkbox.evaluate('el=>el.click()')
+        await page.wait_for_timeout(500)
+        for dialog in await page.locator('[role="dialog"],.ovui-modal:visible').all():
+            if not await dialog.is_visible():continue
+            text=await dialog.inner_text()
+            if '达人佣金' not in text:raise RuntimeError('取消佣金开关遇到未知确认框，未保存')
+            confirm=dialog.get_by_role('button',name=re.compile(r'^(确定|确认)$'))
+            if await confirm.count()!=1:raise RuntimeError('佣金确认框入口不唯一，未保存')
+            await confirm.click(timeout=5000)
+        checkbox=await commission_checkbox(page)
+    if await checkbox.is_checked():raise RuntimeError('含达人佣金出价未取消成功，禁止保存')
+    await assert_editor(page,route)
+    if await parameter_snapshot(page,ignore_commission=True)!=params:
+        raise RuntimeError('取消佣金开关导致其他投放字段变化，未保存')
+    return changed
 
 async def creator_row(page, creator):
     if not re.fullmatch(r'[A-Za-z0-9_.-]{1,64}', creator):
@@ -124,7 +165,8 @@ async def bind(creator, route):
             if hit:
                 return {'binding':hit,'scan':before,'outcome':'already_bound'}
             await open_editor(page, route)
-            params = await parameter_snapshot(page)
+            params = await parameter_snapshot(page, ignore_commission=True)
+            commission_changed = await disable_commission_before_bind(page, route, params)
             drawer, row, text = await creator_row(page, creator)
             if row is None:
                 raise RuntimeError('授权后仍未出现在主品的可选达人列表，等待平台同步')
@@ -152,11 +194,13 @@ async def bind(creator, route):
             await confirm.click(timeout=5000)
             await drawer.wait_for(state='hidden', timeout=12000)
             await assert_editor(page, route)
-            if await parameter_snapshot(page)!=params:
+            if await parameter_snapshot(page, ignore_commission=True)!=params:
                 raise RuntimeError('检测到计划参数变化，已中止保存')
             save = page.get_by_role('button', name='保存', exact=True)
             if await save.count()!=1 or not await save.is_enabled():
                 raise RuntimeError('既有计划保存入口不唯一或不可用')
+            if await (await commission_checkbox(page)).is_checked():
+                raise RuntimeError('提交前含达人佣金出价被重新勾选，禁止保存')
             # Only an existing-plan save is allowed. Never click publish/create fallbacks.
             await save.click(timeout=10000)
             await page.wait_for_timeout(3000)
@@ -169,9 +213,11 @@ async def bind(creator, route):
             if not hit:
                 raise RuntimeError(save_block or '提交结果未核实，下轮先重读绑定列表')
             await open_editor(page, route)
-            if await parameter_snapshot(page)!=params:
+            if await parameter_snapshot(page, ignore_commission=True)!=params:
                 raise RuntimeError('绑定已提交，但计划参数复核不一致，待人工核查')
-            return {'binding':hit,'scan':result,'outcome':'added'}
+            if await (await commission_checkbox(page)).is_checked():
+                raise RuntimeError('保存后含达人佣金出价仍为勾选，待复核')
+            return {'binding':hit,'scan':result,'outcome':'added','commission_included':False,'commission_changed':commission_changed}
         finally:
             await page.close()
 
