@@ -755,6 +755,16 @@ class ResumeTimeTests(unittest.TestCase):
         self.assertEqual(times, {"1": "12:00", "2": "08:00", "3": "08:00"})
 
 
+    def test_retired_matrix_queue_is_never_a_restore_target(self):
+        plan_power._queue_old_pool_resume([
+            {"plan_id": "retired", "plan_name": "旧矩阵", "department": "业务1部-1",
+             "category": "old_pool"},
+            {"plan_id": "live", "plan_name": "普通部门", "department": "业务1部",
+             "category": "old_pool"},
+        ], resume_date="2026-08-23", resume_time="00:00")
+        summary = asyncio.run(plan_power.resume_old_pool(dry_run=True))
+        self.assertEqual({t["plan_id"] for t in summary["targets"]}, {"live"})
+
     def test_future_resume_time_not_due(self):
         # resume_time 23:59 的任务在白天跑恢复时不应被捞起；
         # resume_time 00:00 / 缺字段（旧队列按 12:00）必然已到点（测试不会跑在 0 点前）

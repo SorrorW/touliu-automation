@@ -141,10 +141,8 @@ def _latest_valid_order_report() -> Path:
 NEW_PLAN_NOON_PASS_ROI = NEW_PLAN_ROI_TARGET
 NEW_PLAN_NOON_ADVANCED_ROI = POTENTIAL_PLAN_ROI_TARGET
 NEW_PLAN_MIN_REMAINING_BUDGET = 300
-# 2026-10-14 用户口径「一部-1不用再扫描了」：矩阵号（业务1部-1/鲜会鲜业务一部-1）
-# 从收口分类/启停/老池等一切计划扫描中剔除；ACCOUNT_BY_DEPARTMENT 保留映射
-# （授权链路仍可能用到），只除扫描枚举。
-DEPARTMENTS = [d for d in ACCOUNT_BY_DEPARTMENT if d != "业务1部-1"]
+# 一部-1已从公共账号配置移除，所有扫描枚举使用同一配置。
+DEPARTMENTS = list(ACCOUNT_BY_DEPARTMENT)
 # 仅供保留的旧函数 enable_batch 兼容引用；CLI 已不再执行早八批量开启。
 PREVIOUS_DAY_ROI_THRESHOLD = 3.0
 
@@ -2786,6 +2784,7 @@ async def resume_old_pool(dry_run: bool = False) -> dict:
     due = [
         item for item in queue
         if _resume_key(item) not in ignored_keys
+        and item.get("department") != "业务1部-1"
         and item.get("resume_date", today) <= today
         and (item.get("resume_time") or "12:00") <= now_hhmm
     ]

@@ -143,5 +143,25 @@ class EnsureCdpTests(_Base):
         self.assertFalse(any(p.closed for p in context.pages))
 
 
+class RetiredAccountTests(unittest.IsolatedAsyncioTestCase):
+    async def test_retired_account_rejected_before_browser_launch(self):
+        with mock.patch.object(sp, "_ensure_cdp") as launch:
+            with self.assertRaises(KeyError):
+                await sp.prepare_session("业务1部-1", time.monotonic() + 5)
+        launch.assert_not_called()
+
+    async def test_retired_scan_rejected_before_navigation(self):
+        page = mock.Mock()
+        page.goto = mock.AsyncMock()
+        with self.assertRaises(KeyError):
+            await sp.ensure_qianchuan_page(page, "业务1部-1")
+        page.goto.assert_not_awaited()
+
+    async def test_main_and_three_departments_remain_available(self):
+        self.assertEqual(set(sp.ACCOUNT_BY_DEPARTMENT), {"主号", "业务1部", "业务2部", "业务3部"})
+        with self.assertRaises(KeyError):
+            sp._account_id("鲜会鲜业务一部-1")
+
+
 if __name__ == "__main__":
     unittest.main()
