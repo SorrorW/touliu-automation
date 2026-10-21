@@ -52,3 +52,10 @@ class MainLocatorBrowserTests(unittest.IsolatedAsyncioTestCase):
    outcome=await bind.bind('creator_1',MAIN_PRODUCTS[0])
   self.assertEqual(outcome['outcome'],'added')
   self.assertFalse(outcome['commission_included'])
+
+ async def test_material_confirmation_tracks_submitted_drawer_not_visible_parent(self):
+  from 巨量千川.main_product_materials import _confirm_selection
+  await self.page.set_content('''<div class="ovui-drawer" id="parent">plan details</div><div class="ovui-drawer" id="picker"><button onclick="document.querySelector('#picker').style.display='none'">确定</button></div>''')
+  await _confirm_selection(self.page.locator('.ovui-drawer:visible').last)
+  self.assertTrue(await self.page.locator('#parent').is_visible())
+  self.assertFalse(await self.page.locator('#picker').is_visible())

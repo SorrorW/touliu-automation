@@ -86,11 +86,27 @@ class Journal:
     def __init__(self,page):
         self.page=page;self.rows=[];self.tasks=set()
         self.listener=self.on_response
+        self.pending_material_reads=set();self.last_material_change=time.monotonic()
         page.on('response',self.listener)
+        page.on('request',self.on_material_request)
+        page.on('requestfinished',self.on_material_done)
+        page.on('requestfailed',self.on_material_done)
+    def on_material_request(self,request):
+        if urlsplit(request.url).path.endswith('/get-items-by-product'):
+            self.pending_material_reads.add(request);self.last_material_change=time.monotonic()
+    def on_material_done(self,request):
+        if request in self.pending_material_reads:
+            self.pending_material_reads.discard(request);self.last_material_change=time.monotonic()
+    async def wait_material_idle(self,timeout_s=15,quiet_s=.5):
+        deadline=time.monotonic()+timeout_s
+        while time.monotonic()<deadline:
+            if not self.pending_material_reads and time.monotonic()-self.last_material_change>=quiet_s:return
+            await asyncio.sleep(.05)
+        raise MaterialReadError('上一视频来源仍在读取，未切换达人')
     def on_response(self,response):
         path=urlsplit(response.url).path
         if '/ad/api/' not in path:return
-        if not any(x in path for x in ('/material/','/aweme/','auto-auth','auto-pull','pull-aweme','/author/','get-items-by-product')):return
+        if not (path.endswith('/get_ad_aweme_list') or any(x in path for x in ('/material/','/aweme/','auto-auth','auto-pull','pull-aweme','/author/','get-items-by-product'))):return
         task=asyncio.create_task(self.capture(response));self.tasks.add(task);task.add_done_callback(self.tasks.discard)
     async def capture(self,response):
         try:
@@ -99,6 +115,9 @@ class Journal:
         except Exception:pass
     async def close(self):
         self.page.remove_listener('response',self.listener)
+        self.page.remove_listener('request',self.on_material_request)
+        self.page.remove_listener('requestfinished',self.on_material_done)
+        self.page.remove_listener('requestfailed',self.on_material_done)
         if self.tasks:await asyncio.gather(*list(self.tasks),return_exceptions=True)
     async def wait(self,path,after=0,accept=None):
         deadline=time.monotonic()+22
@@ -113,19 +132,37 @@ class Journal:
         raise MaterialReadError('素材页面未完成实时核验：'+path)
 
 
-def _creator_uids(rows,creator):
-    found=set()
+def _creator_profiles(rows,creator):
+    profiles=[]
     def walk(node):
         if isinstance(node,dict):
             if creator in {str(node.get(k) or '') for k in ('uniqueId','showId','shortId')}:
                 uid=node.get('userId') or node.get('id')
-                if uid:found.add(str(uid))
+                if uid:profiles.append({'uid':str(uid),'name':str(node.get('name') or '')})
             for v in node.values():walk(v)
         elif isinstance(node,list):
             for v in node:walk(v)
     for row in rows:
         if 'aweme' in row['path'] or 'author' in row['path']:walk(row['body'].get('data'))
-    return found
+    return profiles
+
+def _creator_uids(rows,creator):
+    return {p['uid'] for p in _creator_profiles(rows,creator)}
+
+async def _select_manual_creator(picker,journal,creator):
+    # 手动授权达人有独立视频标签。昵称只用于找入口，后续素材请求仍须匹配精确作者UID。
+    profiles=_creator_profiles(journal.rows,creator)
+    uids={p['uid'] for p in profiles};names={p['name'] for p in profiles if p['name']}
+    if len(uids)!=1 or len(names)!=1:return None
+    tab=picker.locator('.ovui-tabs__tab-btn .tab-content-item').get_by_text(next(iter(names)),exact=True).filter(visible=True)
+    count=await tab.count()
+    if count>1:raise MaterialReadError('手动授权达人视频标签不唯一，未按昵称猜测')
+    if not count:return None
+    # 默认视频来源的迟到响应会覆盖分页游标，必须先等其完成再切换。
+    await journal.wait_material_idle()
+    start=len(journal.rows)
+    await tab.click(timeout=8000)
+    return next(iter(uids)),start
 
 async def _open_picker(page,route):
     await page.goto(f'https://qianchuan.jinritemai.com/uni-prom/setting?aavid={route.account_id}&adId={route.plan_id}',wait_until='domcontentloaded',timeout=30000)
@@ -149,6 +186,8 @@ async def _open_picker(page,route):
     return picker
 
 async def _select_creator(page,picker,journal,creator):
+    manual=await _select_manual_creator(picker,journal,creator)
+    if manual is not None:return manual
     await picker.get_by_text('请先选择自动拉取的抖音号',exact=True).filter(visible=True).click(timeout=8000)
     search=page.locator('input[placeholder="请搜索"]:visible')
     if await search.count()!=1:raise MaterialReadError('抖音号下拉搜索入口不唯一，未选择其他达人')
@@ -161,7 +200,10 @@ async def _select_creator(page,picker,journal,creator):
             await asyncio.sleep(.3)
             if await option.count()==1:break
         await asyncio.sleep(.15)
-    else:raise MaterialReadError('精确抖音号搜索结果未稳定为唯一结果，禁止猜测')
+    else:
+        manual=await _select_manual_creator(picker,journal,creator)
+        if manual is not None:return manual
+        raise MaterialReadError('精确抖音号搜索结果未稳定为唯一结果，禁止猜测')
     deadline=time.monotonic()+8;uids=set()
     while time.monotonic()<deadline:
         uids=_creator_uids(journal.rows,creator)
@@ -266,6 +308,15 @@ async def _on_page(page,route,creator,journal):
     videos,usage,raw_order=await _read_videos(page,picker,journal,route,uid,start)
     return picker,videos,usage,raw_order
 
+async def _confirm_selection(picker):
+    confirm=picker.get_by_role('button',name='确定',exact=True)
+    if await confirm.count()!=1 or not await confirm.is_enabled():raise MaterialReadError('素材确定按钮不可用，未提交')
+    # :visible.last 在关闭后会指向仍可见的外层抽屉；固定提交前的节点。
+    submitted=await picker.element_handle()
+    if submitted is None:raise MaterialReadError('素材选择抽屉已变化，未提交')
+    await confirm.click(timeout=10000)
+    await submitted.wait_for_element_state('hidden',timeout=15000)
+
 async def ensure_materials(creator,route,*,before_submit=None,apply=True):
     from .main_products import product_route
     if product_route(route.product_id)!=route:raise ValueError('不是四主品的正确主号路由')
@@ -305,10 +356,7 @@ async def ensure_materials(creator,route,*,before_submit=None,apply=True):
             if await _selected_count(picker)!=1:raise MaterialReadError('仅允许勾选一条精确视频，选择数量不符')
             if before_submit:before_submit()
             await verify_account(page,plan_id=route.plan_id)
-            confirm=picker.get_by_role('button',name='确定',exact=True)
-            if await confirm.count()!=1 or not await confirm.is_enabled():raise MaterialReadError('素材确定按钮不可用，未提交')
-            await confirm.click(timeout=10000)
-            await picker.wait_for(state='hidden',timeout=15000)
+            await _confirm_selection(picker)
             # Navigation destroys local selections; a fresh in-use response must prove persistence.
             _,after,after_usage,_=await _on_page(page,route,creator,journal)
             actual=next((v for v in after if v['videoId']==chosen['videoId']),None)

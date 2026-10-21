@@ -127,3 +127,69 @@ class DropdownResponseWindowTests(unittest.IsolatedAsyncioTestCase):
   data,usage=await _video_page(journal,A,uid,start)
   self.assertEqual(data['videoList'][0]['videoId'],'v1');self.assertTrue(usage['v1'])
   self.assertIn('.auto-aweme-filter-select-drop-item:visible',page.locator.call_args_list[-1].args[0])
+
+
+class PlanCreatorIdentityCaptureTests(unittest.IsolatedAsyncioTestCase):
+ async def test_plan_aweme_list_supplies_exact_creator_uid(self):
+  from unittest.mock import AsyncMock, Mock
+  from 巨量千川.main_product_materials import Journal,_creator_uids
+  page=SimpleNamespace(on=Mock(),remove_listener=Mock())
+  journal=Journal(page)
+  response=SimpleNamespace(url='https://example.test/ad/api/pmc/v1/ad/get_ad_aweme_list',request=None,json=AsyncMock(return_value={'status_code':0,'data':{'adAwemeUsers':[{'awemeUserInfo':{'id':'uid-exact','uniqueId':'creator01','showId':'creator01'}},{'awemeUserInfo':{'id':'uid-other','uniqueId':'creator010'}}]}}))
+  journal.on_response(response)
+  await journal.close()
+  self.assertEqual(_creator_uids(journal.rows,'creator01'),{'uid-exact'})
+ async def test_unrelated_response_is_not_captured(self):
+  from unittest.mock import AsyncMock, Mock
+  from 巨量千川.main_product_materials import Journal
+  journal=Journal(SimpleNamespace(on=Mock(),remove_listener=Mock()))
+  response=SimpleNamespace(url='https://example.test/ad/api/v1/account/user/info',json=AsyncMock())
+  journal.on_response(response);await journal.close()
+  self.assertEqual(journal.rows,[]);response.json.assert_not_awaited()
+
+
+class ManualCreatorTabTests(unittest.IsolatedAsyncioTestCase):
+ def journal(self,creator='creator01',name='A creator',uid='uid-exact'):
+  return SimpleNamespace(rows=[{'path':'/ad/api/pmc/v1/ad/get_ad_aweme_list','body':{'data':{'adAwemeUsers':[{'awemeUserInfo':{'id':uid,'showId':creator,'name':name}}]}}}])
+ async def select(self,journal,count=1):
+  from unittest.mock import AsyncMock,Mock
+  from 巨量千川.main_product_materials import _select_manual_creator
+  journal.wait_material_idle=AsyncMock()
+  tab=SimpleNamespace(count=AsyncMock(return_value=count),click=AsyncMock())
+  picker=SimpleNamespace(locator=Mock(return_value=SimpleNamespace(get_by_text=Mock(return_value=SimpleNamespace(filter=Mock(return_value=tab))))))
+  return await _select_manual_creator(picker,journal,'creator01'),tab,picker
+ async def test_exact_public_id_proves_manual_creator_uid_before_tab_click(self):
+  selected,tab,_=await self.select(self.journal())
+  self.assertEqual(selected,('uid-exact',1));tab.click.assert_awaited_once()
+ async def test_matching_nickname_with_other_public_id_never_selects(self):
+  selected,tab,picker=await self.select(self.journal(creator='other'))
+  self.assertIsNone(selected);tab.click.assert_not_awaited();picker.locator.assert_not_called()
+ async def test_same_nickname_multiple_tabs_is_blocked(self):
+  from 巨量千川.main_product_materials import MaterialReadError
+  with self.assertRaisesRegex(MaterialReadError,'标签不唯一'):await self.select(self.journal(),count=2)
+ async def test_conflicting_author_ids_never_select_manual_tab(self):
+  j=self.journal();j.rows+=self.journal(uid='uid-other').rows
+  selected,tab,picker=await self.select(j)
+  self.assertIsNone(selected);tab.click.assert_not_awaited();picker.locator.assert_not_called()
+
+
+class MaterialSourceSettlingTests(unittest.IsolatedAsyncioTestCase):
+ async def test_switch_waits_for_previous_source_request_to_finish(self):
+  import asyncio
+  from unittest.mock import Mock
+  from 巨量千川.main_product_materials import Journal
+  journal=Journal(SimpleNamespace(on=Mock(),remove_listener=Mock()))
+  request=Mock(url='https://example.test/ad/api/creation/material/get-items-by-product')
+  journal.on_material_request(request)
+  wait=asyncio.create_task(journal.wait_material_idle(timeout_s=1,quiet_s=.01))
+  await asyncio.sleep(.02);self.assertFalse(wait.done())
+  journal.on_material_done(request);await wait
+  await journal.close()
+ async def test_stuck_source_request_blocks_switching(self):
+  from unittest.mock import Mock
+  from 巨量千川.main_product_materials import Journal,MaterialReadError
+  journal=Journal(SimpleNamespace(on=Mock(),remove_listener=Mock()))
+  request=Mock(url='https://example.test/ad/api/creation/material/get-items-by-product')
+  journal.on_material_request(request)
+  with self.assertRaisesRegex(MaterialReadError,'仍在读取'):await journal.wait_material_idle(timeout_s=.01,quiet_s=0)
+  journal.on_material_done(request);await journal.close()
