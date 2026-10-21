@@ -290,6 +290,24 @@ class BatchTests(Base):
     def test_canary_restricts_records(self):
         main=sheet('main');main['simple']['r2']=simple('creator02');self.setup_batch([main],'canary');self.run_sheet(main)
         self.assertEqual(self.client.writes,[('main','r1')])
+    def test_legacy_waiting_authorization_resumes_after_acceptance(self):
+        main=sheet('main',record=simple(progress='达人未确认授权'));self.setup_batch([main])
+        self.assertEqual(self.run_sheet(main),(1,0,0))
+        self.assertEqual(self.client.rows['main']['r1']['进度'],'主号已加入')
+        self.assertEqual(self.platform.count('bind'),1)
+        self.assertEqual(store.pending_sync('main'),[])
+    def test_legacy_waiting_authorization_remains_waiting_until_platform_accepts(self):
+        main=sheet('main',record=simple(progress='达人未确认授权'));self.setup_batch([main])
+        self.platform.authorized=False;self.platform.pending=True
+        self.assertEqual(self.run_sheet(main),(0,0,1))
+        self.assertEqual(self.client.rows['main']['r1']['进度'],'等待达人接受')
+        self.assertEqual(self.platform.count('bind'),0)
+    def test_accepted_authorization_with_missing_material_is_not_marked_complete(self):
+        main=sheet('main',record=simple(progress='等待达人接受'));self.setup_batch([main])
+        self.platform.material_wait=True
+        self.run_sheet(main)
+        self.assertEqual(self.client.rows['main']['r1']['进度'],'待加入素材')
+        self.assertEqual(self.platform.count('bind'),1)
     def test_historical_department_done_never_reopened(self):
         main=sheet('main',record=simple(progress='已投放'));self.setup_batch([main]);self.args.force=True;self.run_sheet(main)
         self.assertEqual(self.platform.calls,[])
