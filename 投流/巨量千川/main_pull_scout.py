@@ -50,6 +50,21 @@ async def _js_click_text(page, text: str) -> bool:
     }""", text)
 
 
+async def wait_creator_list_ready(page, *, timeout=15000):
+    """等待分页总数和行/明确空态同时就绪；超时不推断未绑定。"""
+    await page.wait_for_function(r"""() => {
+      const visible=e=>e.offsetWidth>0&&e.offsetHeight>0;
+      if([...document.querySelectorAll('[aria-busy="true"],.ovui-spin-spinning')].some(visible))return false;
+      const text=document.body.innerText||'';
+      const totals=[...text.matchAll(/共\s*(\d+)\s*条记录/g)];
+      if(!totals.length)return false;
+      const total=Number(totals[totals.length-1][1]);
+      const rows=[...document.querySelectorAll('table tbody tr')].filter(visible);
+      if(total===0)return /暂无数据|暂无抖音号|暂无相关|无搜索结果|未找到/.test(text);
+      return rows.some(r=>/ID[:：]/.test(r.innerText||''));
+    }""",timeout=timeout)
+
+
 async def _read_plan_creators(page, plan_id: str) -> list[str]:
     """完整读取主品关系；总数不符、翻页卡住、账号/商品不符一律抛异常。"""
     route = PRODUCT_BY_PLAN[plan_id]
@@ -75,6 +90,7 @@ async def _read_plan_creators(page, plan_id: str) -> list[str]:
     rows, seen_pages = [], set()
     total = None
     for _ in range(500):
+        await wait_creator_list_ready(page)
         await verify_account(page, plan_id=plan_id)
         body = await page.locator("body").inner_text()
         counts = re.findall(r"共\s*(\d+)\s*条记录", body)

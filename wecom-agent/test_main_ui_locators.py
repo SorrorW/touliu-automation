@@ -15,6 +15,19 @@ class MainLocatorBrowserTests(unittest.IsolatedAsyncioTestCase):
   self.page=await self.browser.new_page()
  async def asyncTearDown(self):
   await self.browser.close();await self.pw.stop()
+ async def test_creator_scan_waits_for_delayed_total(self):
+  from 巨量千川.main_pull_scout import wait_creator_list_ready
+  await self.page.set_content('<table><tbody><tr><td>ID：creator_1</td></tr></tbody></table>')
+  await self.page.evaluate("setTimeout(()=>{const p=document.createElement('p');p.textContent='共 1 条记录';document.body.append(p)},150)")
+  await wait_creator_list_ready(self.page,timeout=2000)
+  self.assertIn('共 1 条记录',await self.page.locator('body').inner_text())
+ async def test_creator_scan_zero_total_needs_explicit_empty_state(self):
+  from 巨量千川.main_pull_scout import wait_creator_list_ready
+  from playwright.async_api import TimeoutError
+  await self.page.set_content('<p>共 0 条记录</p>')
+  with self.assertRaises(TimeoutError):await wait_creator_list_ready(self.page,timeout=200)
+  await self.page.set_content('<p>共 0 条记录</p><p>暂无数据</p>')
+  await wait_creator_list_ready(self.page,timeout=1000)
  async def test_ellipsis_is_never_the_next_page(self):
   await self.page.set_content('''<div class="ovui-pagination"><div class="ovui-page-turner__next-ellipsis" onclick="window.chosen='ellipsis'">...</div><div><div class="ovui-page-turner__next-icon" onclick="window.chosen='next'">next</div></div></div>''')
   choices=self.page.locator(CREATOR_NEXT_SELECTOR)

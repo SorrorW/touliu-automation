@@ -127,6 +127,7 @@ class Workflow:
         if key in self.results:
             return self.results[key]
         step='主品完整扫描'
+        auth=None
         try:
             hit=self.hit(creator,route)
             if hit:
@@ -141,6 +142,7 @@ class Workflow:
                     outcome=result('待人工处理',manual,'人工停投保护')
                 else:
                     # Refresh before authorization as the platform can auto-pull at any time.
+                    step='主品完整扫描'
                     hit=self.hit(creator,route,refresh=True)
                     if hit:
                         outcome=bound_result(hit)
@@ -204,8 +206,10 @@ class Workflow:
                 detail='平台拒绝：合作码错误，请业务员更新表格合作码后重试'
             # Result unknown is never a business failure or a completion checkpoint.
             progress='待加入素材' if step=='主品素材核验' else ('待加入主品' if step=='加入主品' else '待主号授权')
-            if step=='主品完整扫描' and simple.get('进度') in BOUND|{'待人工处理'}:
-                progress=simple['进度']  # 扫描未知不能推断缺少授权，也不覆盖原有处理状态
+            previous=str(simple.get('进度') or '')
+            if step=='主品完整扫描' and previous in BOUND|{'待人工处理','等待达人接受','达人未确认授权','待加入主品','待加入素材'}:
+                progress='等待达人接受' if previous=='达人未确认授权' else previous
+                # 列表读取失败不能证明授权失效，保留已知进度并记录本次阻塞。
             if any(x in detail for x in ('平台限制','平台预检','被拒','合作码','用户不存在','权限')):
                 progress='待人工处理'
             if '佣金过高' in detail:
@@ -213,6 +217,7 @@ class Workflow:
             waiting=(step=='主号授权' and any(t in detail for t in ('待达人确认后','抖音号授权仍「待达人确认','抖音号授权仍「待确认')) and '合作码错误' not in detail)
             if waiting:progress='等待达人接受'
             outcome=result(progress,detail,step,outcome='wait' if waiting else 'blocked')
+            if auth is not None:outcome['auth']=auth
             self.store.save_result(creator,route,outcome)
             self.store.event(creator,route,step,progress,detail)
         self.results[key]=outcome

@@ -165,6 +165,21 @@ class WorkflowTests(Base):
     def test_wrong_account_scan_blocks(self):
         self.platform.invalid_account=True
         self.workflow.execute(simple());self.assertEqual(self.platform.count('authorize'),0);self.assertEqual(self.platform.count('bind'),0)
+    def test_refresh_scan_failure_preserves_waiting_status(self):
+        def fail_second(platform,route):
+            if platform.count('scan')==2:raise RuntimeError('抖音号总条数未读取')
+        self.platform.on_scan=fail_second
+        outcome=self.workflow.execute(simple(progress='等待达人接受'))
+        self.assertEqual(outcome['progress'],'等待达人接受')
+        self.assertEqual(self.platform.count('authorize'),0)
+    def test_scan_failure_does_not_revert_known_material_progress(self):
+        self.platform.complete=False
+        self.assertEqual(self.workflow.execute(simple(progress='待加入素材'))['progress'],'待加入素材')
+    def test_binding_block_keeps_verified_authorization_evidence(self):
+        self.platform.bind=Mock(side_effect=RuntimeError('平台保存结果待复核'))
+        outcome=self.workflow.execute(simple(progress='等待达人接受'))
+        self.assertEqual(outcome['progress'],'待加入主品')
+        self.assertTrue(outcome['auth']['authorized'])
     def test_autopull_between_probe_and_auth(self):
         def update(p,r):
             if p.count('scan')==2:p.rows[r.plan_id]=[binding(r,kind='自动拉取')]
