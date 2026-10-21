@@ -66,6 +66,14 @@ class MainLocatorBrowserTests(unittest.IsolatedAsyncioTestCase):
   self.assertEqual(outcome['outcome'],'added')
   self.assertFalse(outcome['commission_included'])
 
+ async def test_manual_creator_tab_can_be_selected_under_navigation_arrow(self):
+  from types import SimpleNamespace
+  from unittest.mock import AsyncMock
+  from 巨量千川.main_product_materials import _select_manual_creator
+  await self.page.set_content('<div class="ovui-tabs__tab-btn"><div class="tab-content-item" onclick="window.selected=true">测试达人</div></div><div style="position:fixed;inset:0;z-index:9">navigation arrow</div>')
+  journal=SimpleNamespace(rows=[{'path':'/ad/get_ad_aweme_list','body':{'data':{'uniqueId':'creator_1','id':'uid_1','name':'测试达人'}}}],wait_material_idle=AsyncMock())
+  selected=await _select_manual_creator(self.page,journal,'creator_1')
+  self.assertEqual(selected,('uid_1',1));self.assertTrue(await self.page.evaluate('window.selected'))
  async def test_material_confirmation_tracks_submitted_drawer_not_visible_parent(self):
   from 巨量千川.main_product_materials import _confirm_selection
   await self.page.set_content('''<div class="ovui-drawer" id="parent">plan details</div><div class="ovui-drawer" id="picker"><button onclick="document.querySelector('#picker').style.display='none'">确定</button></div>''')

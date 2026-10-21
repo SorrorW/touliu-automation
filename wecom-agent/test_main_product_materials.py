@@ -161,6 +161,24 @@ class ManualCreatorTabTests(unittest.IsolatedAsyncioTestCase):
  async def test_exact_public_id_proves_manual_creator_uid_before_tab_click(self):
   selected,tab,_=await self.select(self.journal())
   self.assertEqual(selected,('uid-exact',1));tab.click.assert_awaited_once()
+ async def test_only_pointer_interception_can_use_exact_tab_fallback(self):
+  from unittest.mock import AsyncMock,Mock
+  from playwright.async_api import TimeoutError
+  from 巨量千川.main_product_materials import _select_manual_creator
+  j=self.journal();j.wait_material_idle=AsyncMock()
+  tab=SimpleNamespace(count=AsyncMock(return_value=1),click=AsyncMock(side_effect=TimeoutError('arrow intercepts pointer events')),evaluate=AsyncMock())
+  picker=SimpleNamespace(locator=Mock(return_value=SimpleNamespace(get_by_text=Mock(return_value=SimpleNamespace(filter=Mock(return_value=tab))))))
+  self.assertEqual(await _select_manual_creator(picker,j,'creator01'),('uid-exact',1))
+  tab.evaluate.assert_awaited_once()
+ async def test_other_tab_timeouts_are_not_bypassed(self):
+  from unittest.mock import AsyncMock,Mock
+  from playwright.async_api import TimeoutError
+  from 巨量千川.main_product_materials import _select_manual_creator
+  j=self.journal();j.wait_material_idle=AsyncMock()
+  tab=SimpleNamespace(count=AsyncMock(return_value=1),click=AsyncMock(side_effect=TimeoutError('element became detached')),evaluate=AsyncMock())
+  picker=SimpleNamespace(locator=Mock(return_value=SimpleNamespace(get_by_text=Mock(return_value=SimpleNamespace(filter=Mock(return_value=tab))))))
+  with self.assertRaises(TimeoutError):await _select_manual_creator(picker,j,'creator01')
+  tab.evaluate.assert_not_awaited()
  async def test_matching_nickname_with_other_public_id_never_selects(self):
   selected,tab,picker=await self.select(self.journal(creator='other'))
   self.assertIsNone(selected);tab.click.assert_not_awaited();picker.locator.assert_not_called()

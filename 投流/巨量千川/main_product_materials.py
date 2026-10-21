@@ -6,7 +6,7 @@ import json
 import re
 import time
 from urllib.parse import parse_qs, urlsplit
-from playwright.async_api import async_playwright
+from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
 from .main_products import verify_account, binding_key, clean_id
 from .commission_gate import parse_commission_from_card_text, is_commission_blocked, load_commission_max_pct
 from .main_pull_scout import _js_click_text, _strip_plugin_overlays
@@ -161,7 +161,17 @@ async def _select_manual_creator(picker,journal,creator):
     # 默认视频来源的迟到响应会覆盖分页游标，必须先等其完成再切换。
     await journal.wait_material_idle()
     start=len(journal.rows)
-    await tab.click(timeout=8000)
+    try:
+        await tab.click(timeout=3000)
+    except PlaywrightTimeoutError as exc:
+        # 横向标签箭头会挡住已经核实唯一身份的标签；只处理这一种遮挡。
+        if 'intercepts pointer events' not in str(exc):raise
+        await tab.evaluate("""el => {
+          const root=el.closest('[role="tab"],.ovui-tabs__tab-btn')||el;
+          if(root.getAttribute('aria-disabled')==='true'||root.hasAttribute('disabled')||/disabled/.test(root.className||''))
+            throw new Error('达人视频标签不可用，未选择');
+          el.click();
+        }""")
     return next(iter(uids)),start
 
 async def _open_picker(page,route):
