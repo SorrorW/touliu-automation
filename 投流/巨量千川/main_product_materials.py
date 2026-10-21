@@ -112,6 +112,8 @@ class Journal:
         try:
             body=await response.json()
             self.rows.append({'path':urlsplit(response.url).path,'request':response.request,'body':body})
+            # JSON 已完整收到也可证明请求完成，避免漏掉 finished 事件后永远占用来源。
+            self.on_material_done(response.request)
         except Exception:pass
     async def close(self):
         self.page.remove_listener('response',self.listener)
@@ -240,10 +242,18 @@ async def _video_page(journal,route,uid,start):
     if videos:
         wanted={str(v.get('videoId')) for v in videos}
         def valid_usage(item):
-            return usage_request_matches(item['request'],route,uid) and wanted <= set((item['body'].get('data') or {}).get('inUseMaterialMap') or {})
-        used=await journal.wait('/check-ad-material-usage',start,valid_usage)
-        usage=(used['body'].get('data') or {})['inUseMaterialMap']
-        if any(type(usage[v]) is not bool for v in wanted):raise MaterialReadError('素材在用状态类型未知')
+            if not usage_request_matches(item['request'],route,uid):return False
+            part=(item['body'].get('data') or {}).get('inUseMaterialMap')
+            if not isinstance(part,dict):raise MaterialReadError('素材在用状态结构未知')
+            # 平台可分批检查同一视频列表；只合并本次窗口、同账号/计划/商品/作者的结果。
+            for vid,value in part.items():
+                if vid not in wanted:continue
+                if type(value) is not bool:raise MaterialReadError('素材在用状态类型未知')
+                if vid in usage and usage[vid] is not value:
+                    raise MaterialReadError('素材在用状态响应冲突，待重新核验')
+                usage[vid]=value
+            return wanted <= set(usage)
+        await journal.wait('/check-ad-material-usage',start,valid_usage)
     return data,usage
 
 async def _advance_video_page(picker):

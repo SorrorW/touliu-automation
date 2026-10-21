@@ -211,3 +211,40 @@ class MaterialSourceSettlingTests(unittest.IsolatedAsyncioTestCase):
   journal.on_material_request(request)
   with self.assertRaisesRegex(MaterialReadError,'仍在读取'):await journal.wait_material_idle(timeout_s=.01,quiet_s=0)
   journal.on_material_done(request);await journal.close()
+
+
+class FragmentedUsageResponseTests(unittest.IsolatedAsyncioTestCase):
+ async def run_parts(self,parts):
+  from 巨量千川.main_product_materials import _video_page,MaterialReadError
+  req=SimpleNamespace(url='https://example.test/check?aavid='+A.account_id+'&adId='+A.plan_id+'&productId='+A.product_id+'&AwemeUID=uid1',post_data_json=None)
+  video_req=SimpleNamespace(url='https://example.test/get?productId='+A.product_id+'&userId=uid1&aavid='+A.account_id,post_data_json=None)
+  rows=[{'path':'/get-items-by-product','request':video_req,'body':{'data':{'videoList':[video('v1'),video('v2')],'hasMore':False}}}]
+  for part,request in parts:rows.append({'path':'/check-ad-material-usage','request':request or req,'body':{'data':{'inUseMaterialMap':part}}})
+  class FakeJournal:
+   async def wait(self,path,after=0,accept=None):
+    for row in rows[after:]:
+     if row['path'].endswith(path) and (accept is None or accept(row)):return row
+    raise MaterialReadError('缺少经过核验的完整响应')
+  return await _video_page(FakeJournal(),A,'uid1',0)
+ async def test_same_scope_fragments_form_complete_usage(self):
+  _,usage=await self.run_parts([({'v1':False},None),({'v2':True},None)])
+  self.assertEqual(usage,{'v1':False,'v2':True})
+ async def test_other_plan_fragment_never_completes_usage(self):
+  from 巨量千川.main_product_materials import MaterialReadError
+  wrong=SimpleNamespace(url='https://example.test/check?aavid='+A.account_id+'&adId=wrong&productId='+A.product_id+'&AwemeUID=uid1')
+  with self.assertRaisesRegex(MaterialReadError,'缺少'):await self.run_parts([({'v1':False},None),({'v2':True},wrong)])
+ async def test_conflicting_values_fail_closed(self):
+  from 巨量千川.main_product_materials import MaterialReadError
+  with self.assertRaisesRegex(MaterialReadError,'冲突'):await self.run_parts([({'v1':False},None),({'v1':True,'v2':False},None)])
+
+class MaterialResponseCompletionTests(unittest.IsolatedAsyncioTestCase):
+ async def test_complete_json_releases_request_without_finished_event(self):
+  from unittest.mock import AsyncMock,Mock
+  from 巨量千川.main_product_materials import Journal
+  journal=Journal(SimpleNamespace(on=Mock(),remove_listener=Mock()))
+  req=Mock(url='https://example.test/ad/api/creation/material/get-items-by-product')
+  journal.on_material_request(req)
+  response=SimpleNamespace(url=req.url,request=req,json=AsyncMock(return_value={'status_code':0,'data':{'videoList':[]}}))
+  await journal.capture(response)
+  self.assertEqual(journal.pending_material_reads,set())
+  await journal.wait_material_idle(timeout_s=.1,quiet_s=0);await journal.close()
