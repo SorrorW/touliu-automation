@@ -127,9 +127,29 @@ class WorkflowTests(Base):
     def test_expired_authorization_is_reapplied(self):
         self.platform.authorized=False
         self.workflow.execute(simple());self.assertEqual(self.platform.count('authorize'),1)
-    def test_commission_over_limit_blocks_both_auth_and_bind(self):
-        self.platform.rate=6.0
-        self.assertEqual(self.workflow.execute(simple())['progress'],'佣金过高');self.assertEqual(self.platform.count('authorize'),0);self.assertEqual(self.platform.count('bind'),0)
+    def test_commission_over_limit_is_checked_after_authorization(self):
+        self.platform.rate=15.0;self.platform.authorized=False
+        outcome=self.workflow.execute(simple())
+        self.assertEqual(outcome['progress'],'佣金过高');self.assertTrue(outcome['auth']['authorized'])
+        self.assertEqual(self.platform.count('authorize'),1);self.assertEqual(self.platform.count('bind'),0)
+        calls=[c[0] for c in self.platform.calls]
+        self.assertLess(calls.index('authorize'),len(calls)-1)
+        self.assertEqual(calls[-1],'probe')
+    def test_high_display_commission_does_not_block_pending_authorization(self):
+        self.platform.rate=15.0;self.platform.authorized=False;self.platform.pending=True
+        outcome=self.workflow.execute(simple())
+        self.assertEqual(outcome['progress'],'等待达人接受')
+        self.assertEqual(self.platform.count('authorize'),1);self.assertEqual(self.platform.count('bind'),0)
+        self.assertEqual(self.platform.count('probe'),1)
+    def test_effective_commission_is_reread_after_authorization(self):
+        self.platform.rate=15.0;self.platform.authorized=False
+        original=self.platform.ensure_authorization
+        def authorize(creator,code):
+            auth=original(creator,code);self.platform.rate=5.0;return auth
+        self.platform.ensure_authorization=authorize
+        self.assertEqual(self.workflow.execute(simple())['progress'],'主号已加入')
+        self.assertEqual(self.platform.count('authorize'),1);self.assertEqual(self.platform.count('bind'),1)
+        self.assertEqual(self.platform.count('probe'),2)
     def test_exact_commission_limit_is_allowed(self):
         self.assertEqual(self.workflow.execute(simple())['progress'],'主号已加入')
     def test_unknown_commission_keeps_existing_allow_policy(self):

@@ -132,15 +132,13 @@ class Workflow:
             if hit:
                 outcome=bound_result(hit)
             else:
-                step='佣金检查'
+                step='达人身份核验'
                 probe=self.gateway.probe(creator,route)
                 if (probe.get('account_id'),probe.get('product_id'),probe.get('plan_id')) != (route.account_id,route.product_id,route.plan_id):
-                    raise RuntimeError('佣金探测目标不符')
+                    raise RuntimeError('达人身份探测目标不符')
                 manual=manual_creator_stop(creator,probe.get('creator_name',''))
                 if manual:
                     outcome=result('待人工处理',manual,'人工停投保护')
-                elif is_commission_blocked(probe.get('commission_pct'),load_commission_max_pct()):
-                    outcome=result('佣金过高',f"佣金率{probe['commission_pct']}%超过现有上限",step)
                 else:
                     # Refresh before authorization as the platform can auto-pull at any time.
                     hit=self.hit(creator,route,refresh=True)
@@ -160,19 +158,27 @@ class Workflow:
                         else:
                             if still_eligible:
                                 still_eligible()
-                            step='加入主品'
-                            self.store.event(creator,route,step,'开始','提交前再次重读对应计划，防止重复加入')
-                            added=self.gateway.bind(creator,route)
-                            scan=added['scan']
-                            self.store.validate_scan(route,scan['rows'],scan.get('complete',False))
-                            if (scan.get('account_id'),scan.get('product_id'),scan.get('plan_id')) != (route.account_id,route.product_id,route.plan_id):
-                                raise RuntimeError('绑定复核目标不符')
-                            self.scans[route.plan_id]=scan
-                            binding=next((r for r in scan['rows'] if r['creator_id']==creator and r['bind_status']=='在投'),None)
-                            if not binding:
-                                raise RuntimeError('未核实有效绑定')
-                            outcome=bound_result(binding)
-                            outcome.update(outcome=added.get('outcome','added'),detail='主号已加入对应现有主品计划，完整分页复核通过')
+                            step='佣金检查'
+                            # 授权前的展示佣金不能阻断申请，也不能替代授权生效后的实时结果。
+                            fresh_probe=self.gateway.probe(creator,route)
+                            if (fresh_probe.get('account_id'),fresh_probe.get('product_id'),fresh_probe.get('plan_id')) != (route.account_id,route.product_id,route.plan_id):
+                                raise RuntimeError('授权后佣金探测目标不符')
+                            if is_commission_blocked(fresh_probe.get('commission_pct'),load_commission_max_pct()):
+                                outcome=result('佣金过高',f"授权已生效；当前佣金率{fresh_probe['commission_pct']}%超过现有上限",step,auth=auth)
+                            else:
+                                step='加入主品'
+                                self.store.event(creator,route,step,'开始','提交前再次重读对应计划，防止重复加入')
+                                added=self.gateway.bind(creator,route)
+                                scan=added['scan']
+                                self.store.validate_scan(route,scan['rows'],scan.get('complete',False))
+                                if (scan.get('account_id'),scan.get('product_id'),scan.get('plan_id')) != (route.account_id,route.product_id,route.plan_id):
+                                    raise RuntimeError('绑定复核目标不符')
+                                self.scans[route.plan_id]=scan
+                                binding=next((r for r in scan['rows'] if r['creator_id']==creator and r['bind_status']=='在投'),None)
+                                if not binding:
+                                    raise RuntimeError('未核实有效绑定')
+                                outcome=bound_result(binding)
+                                outcome.update(outcome=added.get('outcome','added'),detail='主号已加入对应现有主品计划，完整分页复核通过')
             if outcome['progress'] in BOUND:
                 step='主品素材核验'
                 if scheduled and scheduled>date.today():
