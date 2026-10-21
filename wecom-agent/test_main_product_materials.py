@@ -248,3 +248,23 @@ class MaterialResponseCompletionTests(unittest.IsolatedAsyncioTestCase):
   await journal.capture(response)
   self.assertEqual(journal.pending_material_reads,set())
   await journal.wait_material_idle(timeout_s=.1,quiet_s=0);await journal.close()
+
+
+class PartialExistingUsageTests(unittest.TestCase):
+ def test_verified_existing_does_not_require_unrelated_video_status(self):
+  result=choose_video([video('present'),video('unknown')],{'present':True})
+  self.assertEqual(result,{'kind':'existing','videos':[video('present')]})
+ def test_partial_false_never_permits_adding(self):
+  with self.assertRaises(MaterialReadError):choose_video([video('absent'),video('unknown')],{'absent':False})
+ def test_unknown_value_type_still_rejected_when_existing_present(self):
+  with self.assertRaises(MaterialReadError):choose_video([video('present'),video('bad')],{'present':True,'bad':'false'})
+
+class PartialExistingResponseTests(FragmentedUsageResponseTests):
+ async def test_matching_scope_existing_can_prove_material_present(self):
+  _,usage=await self.run_parts([({'v1':True},None)])
+  self.assertEqual(choose_video([video('v1'),video('v2')],usage)['kind'],'existing')
+ async def test_partial_false_response_still_waits_and_blocks(self):
+  with self.assertRaisesRegex(MaterialReadError,'缺少'):await self.run_parts([({'v1':False},None)])
+ async def test_wrong_author_existing_does_not_prove_completion(self):
+  wrong=SimpleNamespace(url='https://example.test/check?aavid='+A.account_id+'&adId='+A.plan_id+'&productId='+A.product_id+'&AwemeUID=other')
+  with self.assertRaisesRegex(MaterialReadError,'缺少'):await self.run_parts([({'v1':True},wrong)])

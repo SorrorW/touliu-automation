@@ -42,10 +42,13 @@ def checked_videos(pages, author_uid):
 
 def choose_video(videos, usage):
     """先判断已加入，再按创建时间取最新合规候选，不套用分部72小时规则。"""
-    if any(v['videoId'] not in usage or type(usage[v['videoId']]) is not bool for v in videos):
+    if any(v['videoId'] in usage and type(usage[v['videoId']]) is not bool for v in videos):
         raise MaterialReadError('视频是否已在本计划中的复核结果不完整')
-    existing=[v for v in videos if usage[v['videoId']] is True]
+    # 一条同作者、同商品、同计划的明确在用视频足以证明已有素材；未知项不得用于补入。
+    existing=[v for v in videos if usage.get(v['videoId']) is True]
     if existing:return {'kind':'existing','videos':existing}
+    if any(v['videoId'] not in usage for v in videos):
+        raise MaterialReadError('视频是否已在本计划中的复核结果不完整')
     candidates=[v for v in videos if not str(v.get('reasonCode') or '') and not v.get('poorQuality')]
     return {'kind':'missing' if candidates else 'unavailable','videos':candidates}
 
@@ -252,7 +255,7 @@ async def _video_page(journal,route,uid,start):
                 if vid in usage and usage[vid] is not value:
                     raise MaterialReadError('素材在用状态响应冲突，待重新核验')
                 usage[vid]=value
-            return wanted <= set(usage)
+            return wanted <= set(usage) or any(usage.get(vid) is True for vid in wanted)
         await journal.wait('/check-ad-material-usage',start,valid_usage)
     return data,usage
 
