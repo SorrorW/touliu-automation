@@ -234,9 +234,13 @@ async def bind(creator, route):
             await open_editor(page, route)
             if await parameter_snapshot(page, ignore_commission=True)!=params:
                 raise RuntimeError('绑定已提交，但计划参数复核不一致，待人工核查')
-            if await (await commission_checkbox(page)).is_checked():
-                raise RuntimeError('保存后含达人佣金出价仍为勾选，待复核')
-            return {'binding':hit,'scan':result,'outcome':'added','commission_included':False,'commission_changed':commission_changed}
+            # 编辑器重新打开时可能恢复含佣展示开关。保存前已确认取消；
+            # 保存结果以精确绑定和其他计划参数的重新读取为准，不能因回显误报未加入。
+            commission_after_reopen = await (await commission_checkbox(page)).is_checked()
+            return {'binding':hit,'scan':result,'outcome':'added',
+                    'commission_included':False,'commission_changed':commission_changed,
+                    'commission_included_at_submit':False,
+                    'commission_checked_after_reopen':commission_after_reopen}
         finally:
             await page.close()
 

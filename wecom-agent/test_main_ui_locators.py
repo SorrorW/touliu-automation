@@ -49,7 +49,7 @@ class MainLocatorBrowserTests(unittest.IsolatedAsyncioTestCase):
   with self.assertRaisesRegex(RuntimeError,'入口不唯一'):await open_main_creator_drawer(self.page)
   self.assertIsNone(await self.page.evaluate('window.clicked'))
 
- async def test_confirming_creator_rechecks_commission_then_save_disables_it(self):
+ async def _run_bind_save_fixture(self,reopen_checked=None,changed_params=False,binding_found=True):
   from types import SimpleNamespace
   from unittest.mock import AsyncMock, patch
   from 巨量千川 import main_product_bind as bind
@@ -61,10 +61,33 @@ class MainLocatorBrowserTests(unittest.IsolatedAsyncioTestCase):
    saved=await p.evaluate('window.savedCommission')
    if saved is not None:
     self.assertFalse(saved)
-  with patch.object(bind,'connect_browser',AsyncMock(return_value=SimpleNamespace(contexts=[None]))),patch.object(bind,'open_main_account_page',AsyncMock(return_value=page)),patch.object(bind,'open_editor',reopen),patch.object(bind,'assert_editor',AsyncMock()),patch.object(bind,'read_target',AsyncMock(side_effect=[{'rows':[]},{'rows':[binding]}])):
+    if reopen_checked is not None:
+     await p.locator('#commission').evaluate('(el,value)=>el.checked=value',reopen_checked)
+    if changed_params:
+     await p.locator('input[placeholder="ROI"]').fill('41')
+  with patch.object(bind,'connect_browser',AsyncMock(return_value=SimpleNamespace(contexts=[None]))),patch.object(bind,'open_main_account_page',AsyncMock(return_value=page)),patch.object(bind,'open_editor',reopen),patch.object(bind,'assert_editor',AsyncMock()),patch.object(bind,'read_target',AsyncMock(side_effect=[{'rows':[]},{'rows':[binding] if binding_found else []}])):
    outcome=await bind.bind('creator_1',MAIN_PRODUCTS[0])
+  return outcome
+
+ async def test_confirming_creator_rechecks_commission_then_save_disables_it(self):
+  outcome=await self._run_bind_save_fixture()
   self.assertEqual(outcome['outcome'],'added')
   self.assertFalse(outcome['commission_included'])
+  self.assertFalse(outcome['commission_checked_after_reopen'])
+
+ async def test_reopened_commission_display_does_not_hide_verified_binding(self):
+  outcome=await self._run_bind_save_fixture(reopen_checked=True)
+  self.assertEqual(outcome['outcome'],'added')
+  self.assertTrue(outcome['commission_checked_after_reopen'])
+  self.assertFalse(outcome['commission_included_at_submit'])
+
+ async def test_reopened_parameter_change_still_blocks_binding_success(self):
+  with self.assertRaisesRegex(RuntimeError,'计划参数复核不一致'):
+   await self._run_bind_save_fixture(reopen_checked=True,changed_params=True)
+
+ async def test_missing_binding_after_save_still_blocks_success(self):
+  with self.assertRaisesRegex(RuntimeError,'提交结果未核实'):
+   await self._run_bind_save_fixture(binding_found=False)
 
  async def test_manual_creator_tab_can_be_selected_under_navigation_arrow(self):
   from types import SimpleNamespace
