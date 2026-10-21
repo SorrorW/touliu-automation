@@ -207,7 +207,7 @@ class Workflow:
             # Result unknown is never a business failure or a completion checkpoint.
             progress='待加入素材' if step=='主品素材核验' else ('待加入主品' if step=='加入主品' else '待主号授权')
             previous=str(simple.get('进度') or '')
-            if step=='主品完整扫描' and previous in BOUND|{'待人工处理','等待达人接受','达人未确认授权','待加入主品','待加入素材'}:
+            if step in ('主品完整扫描','达人身份核验') and previous in BOUND|{'待人工处理','等待达人接受','达人未确认授权','待加入主品','待加入素材'}:
                 progress='等待达人接受' if previous=='达人未确认授权' else previous
                 # 列表读取失败不能证明授权失效，保留已知进度并记录本次阻塞。
             if any(x in detail for x in ('平台限制','平台预检','被拒','合作码','用户不存在','权限')):

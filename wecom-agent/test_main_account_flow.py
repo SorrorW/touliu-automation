@@ -165,6 +165,11 @@ class WorkflowTests(Base):
     def test_wrong_account_scan_blocks(self):
         self.platform.invalid_account=True
         self.workflow.execute(simple());self.assertEqual(self.platform.count('authorize'),0);self.assertEqual(self.platform.count('bind'),0)
+    def test_creator_picker_timeout_preserves_legacy_waiting_status(self):
+        self.platform.probe=Mock(side_effect=TimeoutError('达人列表搜索未就绪'))
+        outcome=self.workflow.execute(simple(progress='达人未确认授权'))
+        self.assertEqual(outcome['progress'],'等待达人接受')
+        self.assertEqual(self.platform.count('authorize'),0)
     def test_refresh_scan_failure_preserves_waiting_status(self):
         def fail_second(platform,route):
             if platform.count('scan')==2:raise RuntimeError('抖音号总条数未读取')
