@@ -48,6 +48,7 @@ from .plan_metrics import (
     _search_plans,
     _set_time_range,
     _wait_plan_table_ready,
+    _visible_plan_rows,
     list_all_plans,
 )
 from .manual_whitelist import is_manual_whitelisted, manual_label
@@ -1223,9 +1224,7 @@ async def _batch_power_targets(
     for _page_no in range(50):
         rows = []
         for _ in range(60):
-            trs = page.locator("table tbody tr")
-            visible = [trs.nth(i) for i in range(await trs.count())
-                       if await trs.nth(i).is_visible()]
+            visible = await _visible_plan_rows(page)
             if visible:
                 rows = visible
                 break
@@ -1858,7 +1857,10 @@ async def monitor(dry_run: bool = False, scan_slot: str | None = None,
     }
     for department in DEPARTMENTS:
         try:
+            scan_started = time.monotonic()
+            log.info("[%s] 开始扫描计划（今天）", department)
             plans = await list_all_plans(department, time_range="今天")
+            log.info("[%s] 扫描读取完成：%d条，耗时%.1f秒", department, len(plans), time.monotonic() - scan_started)
             entries = []
             for plan in plans:
                 entry = _lifecycle_entry(
@@ -1902,17 +1904,20 @@ async def monitor(dry_run: bool = False, scan_slot: str | None = None,
     # 对账基座：每次扫描同步进计划库。数据库故障绝不能影响动作，吞掉异常——
     # 但必须记日志：2026-08-24 DB Browser 挂写事务锁库两小时，落库全灭而
     # 外界毫无感知（except: pass 的代价）。
+    database_synced = False
     try:
         from webui.db import record_plan_daily_labels, sync_lifecycle_catalog
 
         sync_lifecycle_catalog(result)
         # 计划每日标签：每次扫描按 slot 留痕（2026-08-24 起）
         record_plan_daily_labels(result, scan_slot=slot)
+        database_synced = True
     except Exception as exc:
         log.error("扫描落库失败（标签/目录未更新）: %s", str(exc)[:200])
     return {
         "action": "monitor", "dry_run": dry_run, "scan_slot": slot,
         "final_classification": bool(final_classification),
+        "database_synced": database_synced,
         "counts": counts, "plans": result,
     }
 
@@ -4465,6 +4470,26 @@ def _post_action_reconcile(action: str, requested_slot: str | None = None, *, ac
                 )
                 if not scan_errors and expected_enabled <= observed:
                     log.info("恢复状态已全部读回并同步数据库，结束复扫：%d条", len(expected_enabled))
+                    break
+            if action == "pause-old-pool" and action_result is not None:
+                targets = action_result.get("targets")
+                completed = action_result.get("paused", []) + action_result.get("already", [])
+                def keys(items):
+                    return {(item.get("department"), str(item.get("plan_id") or ""))
+                            for item in items if item.get("department") and item.get("plan_id")}
+                expected = keys(completed)
+                observed = {(department, str(item.get("plan_id") or ""))
+                            for department, entries in (report.get("plans") or {}).items()
+                            for item in entries if "暂停" in str(item.get("status") or "")}
+                scan_errors = any(item.get("error")
+                                  for entries in (report.get("plans") or {}).values()
+                                  for item in entries)
+                # 只有所有目标已确认暂停、完整复扫且两张数据库表同步成功才提前结束。
+                if (isinstance(targets, list) and len(keys(targets)) == len(targets)
+                        and keys(targets) <= expected and expected <= observed
+                        and not action_result.get("failed") and not action_result.get("scan_errors")
+                        and not scan_errors and report.get("database_synced") is True):
+                    log.info("老池暂停状态已全部读回并同步数据库，结束复扫：%d条", len(expected))
                     break
             if attempt < 3:
                 time.sleep(3)

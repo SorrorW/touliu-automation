@@ -1117,6 +1117,12 @@ async def _wait_plan_table_ready(page, timeout_s: float = 15.0) -> bool:
     return False
 
 
+async def _visible_plan_rows(page):
+    """在浏览器内筛选可见行，避免每行一次 is_visible 往返。"""
+    rows = page.locator("table tbody tr:visible")
+    return [rows.nth(i) for i in range(await rows.count())]
+
+
 async def list_all_plans(
     department: str = DEFAULT_DEPARTMENT,
     progress_cb=None,  # Callable[[int, int], None] — (已读计划数, 分页总条数)，每页上报
@@ -1176,12 +1182,7 @@ async def list_all_plans(
             # 2026-08-24：连续扫描时后扫部门（90+ 条计划）表格渲染常超 10s，
             # 原 20×500ms 等待会把「仍在加载」误判成「空部门」→ 放宽到 30s。
             for _ in range(60):
-                trs = page.locator("table tbody tr")
-                visible = []
-                for i in range(await trs.count()):
-                    tr = trs.nth(i)
-                    if await tr.is_visible():
-                        visible.append(tr)
+                visible = await _visible_plan_rows(page)
                 if visible:
                     rows = visible
                     break

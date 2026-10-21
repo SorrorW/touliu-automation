@@ -280,3 +280,55 @@ class PersistedPlanTabTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PauseReconcileEarlyExitTests(unittest.TestCase):
+    def run_scans(self, scans, **changes):
+        target = {"department": "业务2部", "plan_id": "p1"}
+        action = {"targets": [target], "paused": [target], "already": [], "failed": []}
+        action.update(changes)
+        with patch.object(power, "monitor", new_callable=AsyncMock, side_effect=scans) as monitor, patch.object(power, "_ignored_resume_keys", return_value=set()), patch.object(power, "_load_old_pool_resume_queue", return_value={"pending": []}), patch.object(power, "_verified_stale_zero_order_ids", return_value=set()), patch("巨量千川.commission_gate.load_commission_blocked_ids", return_value=set()), patch("巨量千川.reconcile.append_reconcile_report", return_value={"diff_count": 0, "diffs": []}) as append, patch.object(power.time, "sleep"):
+            power._post_action_reconcile("pause-old-pool", action_result=action)
+        return monitor, append
+    def scan(self, status="已暂停", **extra):
+        return {"plans": {"业务2部": [{"plan_id": "p1", "status": status}]}, "database_synced": True, **extra}
+    def test_confirmed_pause_and_database_need_only_one_full_scan(self):
+        result = self.scan(); monitor, append = self.run_scans([result])
+        self.assertEqual(monitor.await_count, 1);self.assertIs(append.call_args.args[0], result)
+    def test_lagging_platform_gets_another_scan(self):
+        monitor, _ = self.run_scans([self.scan("投放中"), self.scan()])
+        self.assertEqual(monitor.await_count, 2)
+    def test_failed_database_sync_keeps_three_attempts(self):
+        bad = self.scan(database_synced=False);monitor, _ = self.run_scans([bad]*3)
+        self.assertEqual(monitor.await_count, 3)
+    def test_wrong_department_cannot_prove_pause(self):
+        bad = {"plans": {"业务3部": [{"plan_id": "p1", "status": "已暂停"}]}, "database_synced": True}
+        monitor, _ = self.run_scans([bad]*3);self.assertEqual(monitor.await_count, 3)
+    def test_any_scan_error_keeps_three_attempts(self):
+        bad = self.scan();bad["plans"]["业务3部"] = [{"error": "unreadable"}]
+        monitor, _ = self.run_scans([bad]*3);self.assertEqual(monitor.await_count, 3)
+    def test_failed_action_target_keeps_three_attempts(self):
+        monitor, _ = self.run_scans([self.scan()]*3, failed=[{"plan_id": "p2"}])
+        self.assertEqual(monitor.await_count, 3)
+    def test_unconfirmed_target_prevents_early_exit(self):
+        monitor, _ = self.run_scans([self.scan()]*3, paused=[])
+        self.assertEqual(monitor.await_count, 3)
+    def test_empty_target_list_finishes_after_one_synced_scan(self):
+        monitor, _ = self.run_scans([self.scan()], targets=[], paused=[])
+        self.assertEqual(monitor.await_count, 1)
+    def test_missing_target_identity_never_proves_completion(self):
+        monitor, _ = self.run_scans([self.scan()]*3, targets=[{"department": "业务2部"}])
+        self.assertEqual(monitor.await_count, 3)
+
+
+class MonitorDatabaseSyncFlagTests(unittest.IsolatedAsyncioTestCase):
+    async def run_monitor(self, fail=False):
+        with patch.object(power, "DEPARTMENTS", []), patch.object(power, "_verified_stale_zero_order_ids", return_value=set()), patch.object(power, "_daytime_preserved_categories", return_value={}), patch.object(power, "_yesterday_final_categories", return_value={}), patch.object(power, "load_state", return_value={}), patch("webui.db.sync_lifecycle_catalog", side_effect=RuntimeError("db locked") if fail else None), patch("webui.db.record_plan_daily_labels") as labels:
+            result = await power.monitor(dry_run=True, scan_slot="17:00", final_classification=False)
+        return result, labels
+    async def test_flag_requires_successful_catalog_and_label_sync(self):
+        result, labels = await self.run_monitor()
+        self.assertIs(result["database_synced"], True);labels.assert_called_once()
+    async def test_catalog_failure_does_not_claim_sync_success(self):
+        result, labels = await self.run_monitor(fail=True)
+        self.assertIs(result["database_synced"], False);labels.assert_not_called()
