@@ -1,5 +1,6 @@
 """四主品授权/绑定实质回归：使用临时 SQLite 和模拟平台，不触及业务环境。"""
 import copy
+from contextlib import closing
 from datetime import date, timedelta
 import json
 from pathlib import Path
@@ -29,6 +30,7 @@ class Platform:
         self.rows={r.plan_id:[] for r in MAIN_PRODUCTS}
         self.calls=[];self.complete=True;self.rate=5.0;self.authorized=True;self.pending=False
         self.add_then_timeout=False;self.on_scan=None;self.invalid_account=False
+        self.materials={};self.material_error=None;self.material_wait=False;self.material_response_lost=False;self.material_wrong_target=False
     def scan(self,route):
         self.calls.append(('scan',route.plan_id))
         if self.on_scan:self.on_scan(self,route)
@@ -54,6 +56,17 @@ class Platform:
         self.rows[route.plan_id]=[r for r in self.rows[route.plan_id] if r['creator_id']!=creator]+[binding(route,creator)]
         if self.add_then_timeout:raise TimeoutError('saved but response lost')
         return {'scan':self.scan(route),'outcome':'added','binding':binding(route,creator)}
+    def ensure_materials(self,creator,route,*,before_submit=None):
+        self.calls.append(('materials',creator,route.plan_id))
+        if self.material_error:raise self.material_error
+        key=(route.plan_id,creator)
+        if not self.materials.get(key) and not self.material_wait:
+            if before_submit:before_submit()
+            self.calls.append(('material_submit',creator,route.plan_id))
+            self.materials[key]=['video-'+route.product_id]
+            if self.material_response_lost:raise TimeoutError('material saved but response lost')
+        ids=self.materials.get(key,[])
+        return {'account_id':'wrong' if self.material_wrong_target else route.account_id,'creator_id':creator,'product_id':route.product_id,'plan_id':route.plan_id,'verified':bool(ids),'material_ids':ids,'detail':'视频复核通过' if ids else '该商品没有可用视频'}
     def count(self,name):return sum(c[0]==name for c in self.calls)
 
 class Base(unittest.TestCase):
@@ -152,6 +165,52 @@ class WorkflowTests(Base):
     def test_old_department_checkpoint_never_implies_main_completion(self):
         self.workflow.execute(simple(**{'授权成功':'ok','建计划成功':'ok'}))
         self.assertEqual(self.platform.count('check'),1);self.assertEqual(self.platform.count('bind'),1)
+
+class MaterialWorkflowTests(Base):
+    def test_already_pulled_creator_still_checks_materials(self):
+        self.platform.rows[A.plan_id]=[binding(kind='自动拉取')]
+        r=self.workflow.execute(simple())
+        self.assertEqual(r['progress'],'主号已拉取');self.assertTrue(r['materials']['verified'])
+        self.assertEqual(self.platform.count('materials'),1);self.assertEqual(self.platform.count('authorize'),0)
+    def test_missing_video_is_not_a_completed_binding(self):
+        self.platform.rows[A.plan_id]=[binding(kind='自动拉取')];self.platform.material_wait=True
+        r=self.workflow.execute(simple(progress='主号已拉取'))
+        self.assertEqual(r['progress'],'待加入素材');self.assertEqual(r['outcome'],'wait')
+        self.assertEqual(self.platform.count('bind'),0)
+    def test_existing_material_does_not_submit_again(self):
+        self.platform.rows[A.plan_id]=[binding()];self.platform.materials[(A.plan_id,'creator01')]=['existing']
+        r=self.workflow.execute(simple());self.assertEqual(r['materials']['material_ids'],['existing'])
+        self.assertEqual(self.platform.count('material_submit'),0)
+    def test_materials_are_product_specific(self):
+        self.workflow.execute(simple());self.workflow.execute(simple(route=B))
+        self.assertEqual(self.platform.count('material_submit'),2)
+    def test_cross_table_materials_are_only_added_once(self):
+        self.workflow.execute(simple());self.workflow.execute(simple(**{'业务部':'业务2部'}))
+        self.assertEqual(self.platform.count('material_submit'),1)
+    def test_material_read_failure_does_not_authorize_or_mark_done(self):
+        self.platform.rows[A.plan_id]=[binding()];self.platform.material_error=TimeoutError('material list loading')
+        r=self.workflow.execute(simple(progress='主号已加入'))
+        self.assertEqual(r['progress'],'待加入素材');self.assertEqual(self.platform.count('authorize'),0)
+    def test_material_response_loss_rechecks_before_retry(self):
+        self.platform.material_response_lost=True
+        self.assertEqual(self.workflow.execute(simple())['progress'],'待加入素材')
+        self.platform.material_response_lost=False
+        r=flow.Workflow(self.platform).execute(simple(progress='待加入素材'))
+        self.assertEqual(r['progress'],'主号已加入');self.assertEqual(self.platform.count('material_submit'),1)
+    def test_materials_wrong_target_never_close_record(self):
+        self.platform.material_wrong_target=True
+        self.assertEqual(self.workflow.execute(simple())['progress'],'待加入素材')
+    def test_bound_future_record_does_not_add_materials(self):
+        self.platform.rows[A.plan_id]=[binding()]
+        r=self.workflow.execute(simple(),date.today()+timedelta(days=1))
+        self.assertEqual(r['progress'],'待加入素材');self.assertEqual(self.platform.count('materials'),0)
+    def test_material_evidence_is_persisted(self):
+        self.workflow.execute(simple())
+        self.assertTrue(store.workflow('creator01',A)['materials']['verified'])
+    def test_old_sync_checkpoint_does_not_skip_materials(self):
+        store.stage_record('main','r1','creator01',A,flow.bound_result(binding()))
+        with closing(store.connect()) as c, c:c.execute("UPDATE main_product_record_sync SET version='main-products-v1'")
+        self.assertEqual(store.pending_sync('main'),[])
 
 class StoreTests(Base):
     def test_product_specific_snapshot_keys(self):
@@ -398,5 +457,23 @@ class ManualRestrictionTests(Base):
     def test_nonstop_whitelist_does_not_block_new_workflow(self):
         with patch('巨量千川.manual_whitelist._load_entries',return_value=[{'name':'creator01','reason':'允许新素材'}]):
             self.assertEqual(self.workflow.execute(simple())['progress'],'主号已加入')
+
+
+
+
+class ManualRetryProtectionTests(Base):
+    def test_stopped_sheet_name_is_protected_even_when_already_bound(self):
+        self.platform.rows[A.plan_id]=[binding()]
+        with patch('巨量千川.manual_whitelist._load_entries',return_value=[{'name':'明确停投达人','reason':'暂不投放'}]):
+            outcome=self.workflow.execute(simple(progress='待人工处理',达人名称='明确停投达人'))
+        self.assertEqual(outcome['progress'],'待人工处理')
+        self.assertEqual(self.platform.count('materials'),0)
+        self.assertEqual(self.platform.count('bind'),0)
+    def test_failed_scan_preserves_manual_status_instead_of_guessing_auth(self):
+        self.platform.complete=False
+        outcome=self.workflow.execute(simple(progress='待人工处理'))
+        self.assertEqual(outcome['progress'],'待人工处理')
+        self.assertEqual(outcome['outcome'],'blocked')
+        self.assertEqual(self.platform.count('authorize'),0)
 
 if __name__=='__main__':unittest.main(verbosity=2)

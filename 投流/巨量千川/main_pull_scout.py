@@ -22,6 +22,7 @@ import re
 import argparse
 
 _PRODUCT_IDS = set(PRODUCT_MAP.values())
+CREATOR_NEXT_SELECTOR = '[class*="pagination"] [class*="next"]:not([class*="ellipsis"]), li[title="下一页"]'
 
 
 async def _strip_plugin_overlays(page) -> None:
@@ -96,7 +97,7 @@ async def _read_plan_creators(page, plan_id: str) -> list[str]:
                 raise RuntimeError("主号达人行无法识别，不得忽略")
             if text not in rows:
                 rows.append(text)
-        nexts = page.locator('[class*="pagination"] [class*="next"], li[title="下一页"]')
+        nexts = page.locator(CREATOR_NEXT_SELECTOR)
         nxt, disabled = None, True
         for i in range(await nexts.count()):
             el = nexts.nth(i)

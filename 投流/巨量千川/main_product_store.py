@@ -88,7 +88,7 @@ def event(creator, route, step, status, detail=""):
 
 def save_result(creator, route, result):
     # Cooperation codes and credentials are never persisted in this ledger.
-    payload = {k: v for k, v in result.items() if k in ('progress','detail','step','binding','auth','verified_at','outcome')}
+    payload = {k: v for k, v in result.items() if k in ('progress','detail','step','binding','auth','materials','verified_at','outcome')}
     with closing(connect()) as c, c:
         c.execute("INSERT OR REPLACE INTO main_product_workflows VALUES (?,?,?,?,?,?,?,?,?)", (*binding_key(creator, route), WORKFLOW_VERSION, result['progress'], result.get('detail','')[:1600], json.dumps(payload, ensure_ascii=False), time.time()))
 

@@ -24,7 +24,7 @@ from 巨量千川.commission_gate import is_commission_blocked, load_commission_
 log = logging.getLogger(__name__)
 ROLLOUT_FILE = HERE/'main_authorization_rollout.json'
 PENDING = {'','待处理','待授权','允许授权','等待达人接受','可投放','待主号授权',
-           '待加入主品','主号已拉取','主号已加入','等待21点进行授权','待主账号拉取',
+           '待加入主品','待加入素材','主号已拉取','主号已加入','等待21点进行授权','待主账号拉取',
            '等待23点建计划','等待23点创建'}
 HISTORIC_DONE = {'已投放','已完成'}
 BOUND = {'主号已拉取','主号已加入'}
@@ -90,6 +90,9 @@ class Gateway:
     def bind(self, creator, route):
         from 巨量千川.main_product_bind import bind
         return asyncio.run(bind(creator, route))
+    def ensure_materials(self, creator, route, *, before_submit=None):
+        from 巨量千川.main_product_materials import ensure_materials
+        return asyncio.run(ensure_materials(creator, route, before_submit=before_submit))
 
 class Workflow:
     def __init__(self, gateway=None, persistence=store):
@@ -115,7 +118,8 @@ class Workflow:
         if route is None:
             return result('待人工处理','非四主品商品，不进入分部授权或建计划','商品路由')
         key=binding_key(creator,route)
-        reason=stop_reason(simple) or self.denied.get(key,'') or manual_creator_stop(creator)
+        creator_name=str(simple.get('达人名称') or simple.get('达人昵称') or simple.get('达人') or '')
+        reason=stop_reason(simple) or self.denied.get(key,'') or manual_creator_stop(creator,creator_name)
         if reason:
             return result('待人工处理',reason,'人工停投保护')
         if not re.fullmatch(r'[A-Za-z0-9_.-]{1,64}',creator):
@@ -169,6 +173,20 @@ class Workflow:
                                 raise RuntimeError('未核实有效绑定')
                             outcome=bound_result(binding)
                             outcome.update(outcome=added.get('outcome','added'),detail='主号已加入对应现有主品计划，完整分页复核通过')
+            if outcome['progress'] in BOUND:
+                step='主品素材核验'
+                if scheduled and scheduled>date.today():
+                    outcome=result('待加入素材','抖音号已绑定，等待预约日期 '+scheduled.isoformat()+' 后加入视频素材',step,binding=outcome.get('binding'),outcome='wait')
+                else:
+                    self.store.event(creator,route,step,'开始','先核验该达人在本商品、本计划的视频；缺失才添加最新可用视频')
+                    materials=self.gateway.ensure_materials(creator,route,before_submit=still_eligible)
+                    actual=(materials.get('account_id'),materials.get('creator_id'),materials.get('product_id'),materials.get('plan_id'))
+                    if actual!=binding_key(creator,route):
+                        raise RuntimeError('素材复核账户/达人/商品/计划不符')
+                    if materials.get('verified') and materials.get('material_ids'):
+                        outcome.update(step=step,materials=materials,verified_at=materials.get('verified_at',time.time()),detail=outcome['detail']+'；'+materials.get('detail','对应商品视频素材复核通过'))
+                    else:
+                        outcome=result('待加入素材',materials.get('detail','抖音号已绑定，尚未核实视频素材已加入'),step,binding=outcome.get('binding'),materials=materials,outcome='wait')
             scan=self.scans.get(route.plan_id)
             if scan:
                 self.store.save_scan(route,scan['rows'],complete=True)
@@ -179,9 +197,9 @@ class Workflow:
             if '合作码错误' in detail:
                 detail='平台拒绝：合作码错误，请业务员更新表格合作码后重试'
             # Result unknown is never a business failure or a completion checkpoint.
-            progress='待加入主品' if step=='加入主品' else '待主号授权'
-            if step=='主品完整扫描' and simple.get('进度') in BOUND:
-                progress=simple['进度']  # 未知不是缺失；不因扫描失败改写已绑定标签
+            progress='待加入素材' if step=='主品素材核验' else ('待加入主品' if step=='加入主品' else '待主号授权')
+            if step=='主品完整扫描' and simple.get('进度') in BOUND|{'待人工处理'}:
+                progress=simple['进度']  # 扫描未知不能推断缺少授权，也不覆盖原有处理状态
             if any(x in detail for x in ('平台限制','平台预检','被拒','合作码','用户不存在','权限')):
                 progress='待人工处理'
             if '佣金过高' in detail:
@@ -239,7 +257,7 @@ class Batch:
                     try:
                         hit=self.workflow.hit(creator,route)
                         if hit:
-                            binding=hit['bind_type']+' / 在投';action='复核闭环，不申请或添加'
+                            binding=hit['bind_type']+' / 在投';action='已绑定；继续核验视频素材，缺失才补入最新可用视频'
                         else:
                             scan=self.workflow.scans[route.plan_id]
                             deleted=any(r['creator_id']==creator and r['bind_status']=='已删除' for r in scan['rows'])

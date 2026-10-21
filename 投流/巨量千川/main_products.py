@@ -5,7 +5,7 @@ from urllib.parse import parse_qs, urlsplit
 
 MAIN_AAVID = "1762338766025739"
 MAIN_ACCOUNT = "主号"
-WORKFLOW_VERSION = "main-products-v1"
+WORKFLOW_VERSION = "main-products-v2-materials"
 
 @dataclass(frozen=True)
 class MainProduct:
