@@ -243,7 +243,9 @@ async def _open_overall(page, department: str = "业务3部"):
     """Ensure page is on the overall plan page with search input available.
     返回实际可用的 Page（僵尸标签可能被换新）。"""
     # 83+ 条计划的总览页实时刷新，20s 加载窗口实测不够（2026-08-17）
-    return await ensure_qianchuan_page(page, department, timeout=45.0)
+    page = await ensure_qianchuan_page(page, department, timeout=45.0)
+    await force_plans_tab(page)
+    return page
 
 
 async def _locate_task_row(page, main_plan_id: str, task_id: str):
@@ -467,6 +469,8 @@ def _range_matches(target: str, current: tuple[str, str] | None, today: datetime
         return None
     today = today or datetime.date.today()
     fmt = "%Y-%m-%d"
+    if target == "近180天含今天":
+        return current == _target_dates(target, today)
     if target == "今天":
         return current == (today.strftime(fmt), today.strftime(fmt))
     if target == "昨天":
@@ -491,6 +495,8 @@ def _target_dates(target: str, today: datetime.date | None = None) -> tuple[str,
     """目标快捷选项 → (起, 止) 日期；无法解析返回 None。语义同 _range_matches。"""
     today = today or datetime.date.today()
     fmt = "%Y-%m-%d"
+    if target == "近180天含今天":
+        return ((today - datetime.timedelta(days=179)).strftime(fmt), today.strftime(fmt))
     if target == "今天":
         d = today.strftime(fmt)
         return (d, d)
@@ -569,6 +575,7 @@ async def _set_time_range(page, mode: str, retries: int = 4) -> None:
         # URL 已是目标范围且读回不矛盾：无需重复导航，避免无谓 reload
         if _daterange_from_url(page.url) == dates:
             if _range_matches(target, await _read_range_inputs(page)) is not False:
+                await force_plans_tab(page)
                 return
 
         # 记录切换前的表格内容，用于检测 reload 完成
@@ -587,6 +594,10 @@ async def _set_time_range(page, mode: str, retries: int = 4) -> None:
 
         # 读回校验：URL 参数与输入框起止日期均须符合目标范围语义
         await page.wait_for_timeout(1500)
+        # Date navigation restores the platform's persisted managed-store tab.
+        # Re-enter the plan tab before reading/searching rows; URL dates alone
+        # do not prove the plan table is visible.
+        await force_plans_tab(page)
         current = await _read_range_inputs(page)
         match = _range_matches(target, current)
         if match is not False and _daterange_from_url(page.url) == dates:

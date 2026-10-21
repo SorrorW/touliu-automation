@@ -40,11 +40,14 @@ from playwright.async_api import async_playwright
 from .plan_metrics import (
     _ensure_cdp,
     _department_overview_page,
+    _column_labels,
     _goto_next_page,
     _open_overall,
     _parse_plan_row,
     _read_pagination_total,
     _search_plans,
+    _set_time_range,
+    _wait_plan_table_ready,
     list_all_plans,
 )
 from .manual_whitelist import is_manual_whitelisted, manual_label
@@ -175,14 +178,13 @@ def _wait_report_idle(max_wait_s: float = 15 * 60) -> None:
         if not busy:
             return
         if time.monotonic() >= deadline:
-            log.warning("等播报扫描结束超时，强行继续（可能撞浏览器）")
-            return
+            raise TimeoutError("等待播报扫描超时，本轮退出，禁止抢占浏览器")
         log.info("大节点播报扫描中（report_busy），启停动作让行，10s 后重试…")
         time.sleep(10)
 
 
 def _acquire_action_lock(max_wait_s: float = 900.0):
-    """拿启停动作互斥锁；等到 max_wait_s 仍未拿到就强行继续（记 warning）。"""
+    """拿启停动作互斥锁；超时退出，绝不在无锁状态操作浏览器。"""
     import msvcrt
     fd = open(_ACTION_LOCK_FILE, "a+b")
     deadline = time.monotonic() + max_wait_s
@@ -193,8 +195,8 @@ def _acquire_action_lock(max_wait_s: float = 900.0):
             return fd, True
         except OSError:
             if time.monotonic() >= deadline:
-                log.warning("等另一启停任务超时，强行继续（可能撞浏览器）")
-                return fd, False
+                fd.close()
+                raise TimeoutError("等待另一启停任务超时，本轮退出，未执行浏览器操作")
             log.info("另一启停任务运行中，10s 后重试…")
             time.sleep(10)
 
@@ -223,8 +225,10 @@ def _busy_mark(action: str) -> None:
 
 def _busy_clear() -> None:
     try:
-        _BUSY_FILE.unlink(missing_ok=True)
-    except OSError:
+        payload = json.loads(_BUSY_FILE.read_text(encoding="utf-8"))
+        if payload.get("pid") == os.getpid():
+            _BUSY_FILE.unlink(missing_ok=True)
+    except (OSError, ValueError, TypeError):
         pass
 
 
@@ -245,6 +249,8 @@ def _wait_poll_round_idle(max_wait_s: float = 600.0) -> None:
     while _poll_round_running() and time.monotonic() < deadline:
         log.info("企微轮询正在操作浏览器，等待其结束后启停…")
         time.sleep(15)
+    if _poll_round_running():
+        raise TimeoutError("等待企微轮询超时，本轮退出，禁止抢占浏览器")
 
 
 def _today() -> str:
@@ -1194,8 +1200,22 @@ async def _batch_power_targets(
         for item in targets
         if str(item.get("plan_id") or item.get("plan_name") or "").strip()
     }
+    for key, item in list(wanted.items()):
+        if is_manual_whitelisted(department=department,
+                                 plan_id=str(item.get("plan_id") or ""),
+                                 plan_name=str(item.get("plan_name") or "")):
+            result["failed"].append({**item, "detail": "manual_whitelist"})
+            del wanted[key]
+    if not wanted:
+        return result
     found: set[str] = set()
-    await _open_overall(page, department)
+    seen_rows: set[str] = set()
+    complete = False
+    page = await _open_overall(page, department)
+    if turn_on:
+        await _set_time_range(page, "近180天含今天")
+    if not await _wait_plan_table_ready(page):
+        raise RuntimeError("计划列表未就绪，不能把托管页或加载失败当作未找到计划")
     await page.wait_for_timeout(800)
     if await _dismiss_promotion_modal(page):
         await page.wait_for_timeout(300)
@@ -1214,9 +1234,14 @@ async def _batch_power_targets(
             break
         page_keys: set[str] = set()
         matches = []
+        labels = None
+        try:
+            labels = await _column_labels(rows[0], await rows[0].locator("td, th").count())
+        except Exception:
+            pass
         for row in rows:
             try:
-                metrics = await _parse_plan_row(row)
+                metrics = await _parse_plan_row(row, labels)
             except Exception:
                 continue
             if metrics is None:  # 畸形行已留 WARNING，跳过
@@ -1230,17 +1255,26 @@ async def _batch_power_targets(
             if item is None:
                 continue
             key = str(item.get("plan_id") or item.get("plan_name") or "").strip()
+            if key in found:
+                continue
             found.add(key)
             if desired_word in (metrics.status or ""):
                 result["already"].append(item)
             # 2026-09-04 修复：暂停动作要勾的是「投放中」的行（状态不含「暂停」），
             # 此前两个分支都写成「暂停」in status——在投计划永远进不了 matches，
             # 批量暂停从未生效（17:00 老池停 110 条全落 failed 走逐条的根因）。
+            elif turn_on and ("系统" in (metrics.status or "") or
+                              getattr(metrics, "pause_category", None) == "system_pause"):
+                result["failed"].append({**item, "detail": "unexpected_status:系统暂停"})
             elif ((not turn_on and "暂停" not in (metrics.status or "")) or
                   (turn_on and "暂停" in (metrics.status or ""))):
                 matches.append((item, row))
             else:
                 result["failed"].append({**item, "detail": f"unexpected_status:{metrics.status}"})
+        if page_keys and page_keys <= seen_rows:
+            log.warning("[%s] 分页重复，停止扫描，未找到目标保留队列", department)
+            break
+        seen_rows.update(page_keys)
         # 大批量分批点（2026-09-08）：实测 ≤7 条稳定生效、≥32 条点击后 0 翻状态
         # （09-07 业务3部 55 条开启、09-08 业务2部 55 条/业务3部 51 条暂停全吞，
         # 弹窗/确认均正常但状态不翻），平台阈值未知，取 10 条一批。
@@ -1251,7 +1285,7 @@ async def _batch_power_targets(
             for item, row in chunk:
                 if chunk_no > 0:
                     try:
-                        m_now = await _parse_plan_row(row)
+                        m_now = await _parse_plan_row(row, labels)
                     except Exception:
                         m_now = None
                     want_pid = str(item.get("plan_id") or "")
@@ -1293,7 +1327,7 @@ async def _batch_power_targets(
                                 retry_sel = []
                                 for item, row in remaining:
                                     try:
-                                        m2 = await _parse_plan_row(row)
+                                        m2 = await _parse_plan_row(row, labels)
                                     except Exception:
                                         m2 = None
                                     want_pid = str(item.get("plan_id") or "")
@@ -1369,13 +1403,18 @@ async def _batch_power_targets(
                 for _, row in selected:
                     await _set_row_checkbox(row, False)
         total = await _read_pagination_total(page)
-        if total is None or len(found) >= len(wanted) or not page_keys:
+        if len(found) >= len(wanted):
+            complete = True
             break
-        if not await _goto_next_page(page):
+        if total is not None and len(seen_rows) >= total:
+            complete = True
+            break
+        if not page_keys or not await _goto_next_page(page):
             break
     for key, item in wanted.items():
         if key not in found:
-            result["failed"].append({**item, "detail": "target_not_found_after_full_scan"})
+            detail = "target_not_found_after_full_scan" if complete else "target_not_found_scan_incomplete"
+            result["failed"].append({**item, "detail": detail})
     return result
 
 
@@ -2770,6 +2809,43 @@ async def _adopt_manual_new_plans() -> dict:
     return summary
 
 
+async def _retry_resume_failures(page, items: list[dict], batch: dict) -> tuple[list, list]:
+    """只重试已定位到、批量动作失败的目标；未找到和异常状态保留队列。"""
+    key = lambda item: str(item.get("plan_id") or item.get("plan_name") or "")
+    singles = [(item, "enabled") for item in batch.get("enabled", [])]
+    singles += [(item, "already") for item in batch.get("already", [])]
+    done = {key(item) for item, _ in singles}
+    details = {key(item): str(item.get("detail") or "") for item in batch.get("failed", [])}
+    failed = []
+    attempts = 0
+    deadline = time.monotonic() + 120
+    for item in items:
+        if key(item) in done:
+            continue
+        detail = details.get(key(item), "batch_result_unknown")
+        # Never turn a missing row, incomplete scan, system pause or unreadable state
+        # into hundreds of browser searches. Retain the recovery ticket for review.
+        retryable = detail.startswith("failed:") and "系统" not in detail
+        if not retryable or attempts >= 3 or time.monotonic() >= deadline:
+            failed.append({**item, "detail": f"deferred:{detail}"})
+            continue
+        attempts += 1
+        try:
+            timeout = min(45, max(0.1, deadline - time.monotonic()))
+            result = await asyncio.wait_for(
+                _enable_one(page, {**item, "time_range": "近180天含今天"}), timeout=timeout)
+        except asyncio.TimeoutError:
+            result = "timeout_status_unconfirmed"
+        except Exception as exc:
+            result = f"error:{str(exc)[:150]}"
+        if result in ("enabled", "already"):
+            singles.append((item, result))
+        else:
+            failed.append({**item, "detail": f"batch={detail}; retry={result}"})
+    log.info("批量恢复后：成功%d，精准重试%d，保留待核验%d", len(singles), attempts, len(failed))
+    return singles, failed
+
+
 async def resume_old_pool(dry_run: bool = False) -> dict:
     """到点恢复前一晚实际暂停的非重点计划：新/潜力 08:00，老池 12:00（2026-08-23 起分时）。
 
@@ -2799,8 +2875,8 @@ async def resume_old_pool(dry_run: bool = False) -> dict:
             continue
         pending_by_department.setdefault(item["department"], []).append({
             **item,
-            # 已暂停计划当天可能无消耗，不能用“今天”筛选，否则会找不到。
-            "time_range": None,
+            # 恢复扫描覆盖历史和今天，避免历史计划无今日消耗时漏查。
+            "time_range": "近180天含今天",
         })
 
     targets = [item for items in pending_by_department.values() for item in items]
@@ -2884,63 +2960,18 @@ async def resume_old_pool(dry_run: bool = False) -> dict:
                 # 批量优先（2026-09-01 用户拍板「批量开启/暂停 + 事后逐条查验」）：
                 # 全表扫一次、按页勾选目标、一次批量开启，行状态复核由
                 # _batch_power_targets 内置（逐条等状态翻转，60s 兜底）。
-                # 批量未成功的条目回退 _enable_one 单条重试，双保险不丢计划；
-                # 逐条慢路径只在批量整体异常时使用。
-                singles: list[tuple[dict, str]] = []  # (item, "enabled"/"already")
-                fallback_items: list[dict] = []
+                # 仅已定位的动作失败有限重试；未找到/扫描异常留票，避免逐条重搜堵塞轮询。
                 try:
                     batch = await _batch_enable_targets(page, department, items)
                 except Exception as exc:
-                    log.warning("[%s] 批量开启整体异常，回退逐条模式: %s",
-                                department, str(exc)[:120])
-                    batch = None
-                if batch is not None:
-                    ok_keys: set[str] = set()
-                    for it in batch.get("enabled", []):
-                        singles.append((it, "enabled"))
-                        ok_keys.add(it.get("plan_id") or it.get("plan_name"))
-                    for it in batch.get("already", []):
-                        singles.append((it, "already"))
-                        ok_keys.add(it.get("plan_id") or it.get("plan_name"))
-                    batch_failed = {
-                        (it.get("plan_id") or it.get("plan_name")): it.get("detail")
-                        for it in batch.get("failed", [])
-                    }
-                    fallback_items = [
-                        item for item in items
-                        if (item.get("plan_id") or item.get("plan_name")) not in ok_keys
-                    ]
-                    if fallback_items:
-                        log.info("[%s] 批量后剩 %d 条转单条重试: %s", department,
-                                 len(fallback_items),
-                                 "、".join(str(i.get("plan_name") or i.get("plan_id"))
-                                           for i in fallback_items[:5]))
-                else:
-                    batch_failed = {}
-                    fallback_items = list(items)
-                for item in fallback_items:
-                    key = item.get("plan_id") or item.get("plan_name")
-                    batch_detail = batch_failed.get(key)
-                    try:
-                        result = await _enable_one(page, item)
-                    except Exception as exc:
-                        # 搜索框偶发失联（页面自动刷新等）：刷新页面重试一次，
-                        # 不让单条异常中断整个部门（08-21 实测 19 条被连坐）。
-                        log.warning("[%s] 恢复异常，刷新页面重试: %s (%s)",
-                                    department, item.get("plan_name"), str(exc)[:120])
-                        try:
-                            await page.reload(wait_until="domcontentloaded")
-                            await page.wait_for_timeout(5000)
-                            result = await _enable_one(page, item)
-                        except Exception as exc2:
-                            result = f"error:{str(exc2)[:150]}"
-                    if result in ("enabled", "already"):
-                        singles.append((item, result))
-                    else:
-                        detail = f"batch={batch_detail}; retry={result}" if batch_detail else result
-                        summary["failed"].append({**item, "detail": detail})
-                        log.error("[%s] 恢复失败: %s (%s)",
-                                  department, item.get("plan_name"), detail)
+                    log.error("[%s] 批量扫描异常，保留队列而不逐条重搜: %s",
+                              department, str(exc)[:120])
+                    batch = {"enabled": [], "already": [], "failed": [
+                        {**item, "detail": f"batch_scan_error:{str(exc)[:120]}"}
+                        for item in items
+                    ]}
+                singles, failed = await _retry_resume_failures(page, items, batch)
+                summary["failed"].extend(failed)
                 # 08:00 新计划先归一 4.5/300（编辑页本质逐条）：票上标了 new_plan
                 # 但平台实际参数可能仍是旧档（如人工加素材后按新计划重启的肥牛片，
                 # 票据层改了 new_plan/4.5，平台还是 10.3）。不归一的话开启后
@@ -4380,7 +4411,7 @@ def _post_action_scan_slot(action: str, requested_slot: str | None = None) -> st
     return _label_slot_now()
 
 
-def _post_action_reconcile(action: str, requested_slot: str | None = None) -> None:
+def _post_action_reconcile(action: str, requested_slot: str | None = None, *, action_result: dict | None = None) -> None:
     """Rescan after actions, sync DB, then write one post-action reconciliation.
 
     Platform status/ROI/budget changes are eventually consistent. A single scan
@@ -4407,6 +4438,11 @@ def _post_action_reconcile(action: str, requested_slot: str | None = None) -> No
             for item in _load_old_pool_resume_queue().get("pending", [])
             if item.get("plan_id")
         )
+        expected_enabled = {
+            (item.get("department"), str(item.get("plan_id") or ""))
+            for item in ((action_result or {}).get("enabled", []) +
+                         (action_result or {}).get("already", [])) if item.get("plan_id")
+        }
         report = None
         for attempt in range(1, 4):
             report = asyncio.run(monitor(
@@ -4417,6 +4453,19 @@ def _post_action_reconcile(action: str, requested_slot: str | None = None) -> No
                 "动作后数据库复核 %d/3: action=%s slot=%s counts=%s",
                 attempt, action, slot, json.dumps(counts, ensure_ascii=False),
             )
+            if action == "resume-old-pool" and action_result is not None:
+                observed = {
+                    (department, str(item.get("plan_id") or ""))
+                    for department, entries in (report.get("plans") or {}).items()
+                    for item in entries if "投放中" in str(item.get("status") or "")
+                }
+                scan_errors = any(
+                    item.get("error") for entries in (report.get("plans") or {}).values()
+                    for item in entries
+                )
+                if not scan_errors and expected_enabled <= observed:
+                    log.info("恢复状态已全部读回并同步数据库，结束复扫：%d条", len(expected_enabled))
+                    break
             if attempt < 3:
                 time.sleep(3)
         body = append_reconcile_report(
@@ -4479,9 +4528,11 @@ def _main_impl() -> int:
             _wait_report_idle()  # 大节点播报扫描优先：扫描在跑就等它结束
         if not args.from_poll:
             _wait_poll_round_idle()
-            _busy_mark(args.action)
         lock_fd, lock_held = _acquire_action_lock()
     try:
+        if busy:
+            _busy_mark(args.action)
+            _wait_poll_round_idle()
         if args.action != "status" and not args.dry_run and not args.force and not automation_enabled():
             print(json.dumps({
                 "action": args.action,
@@ -4574,7 +4625,7 @@ def _main_impl() -> int:
             # 三遍超过轮询单步 1200s 上限——动作本身已成功却被判超时失败空转重试
             # （2026-09-26 rNS81Z 实证）；08:00 恢复槽与 23:00 收口自带复核兜底。
             if not (args.action == "pause-one" and args.from_poll):
-                _post_action_reconcile(args.action, args.scan_slot)
+                _post_action_reconcile(args.action, args.scan_slot, action_result=out)
         print(json.dumps(out, ensure_ascii=False, indent=1))
         return 0
     except Exception as exc:
@@ -4583,10 +4634,10 @@ def _main_impl() -> int:
                          ensure_ascii=False))
         return 1
     finally:
-        if lock_fd is not None:
-            _release_action_lock(lock_fd, lock_held)
         if busy:
             _busy_clear()
+        if lock_fd is not None:
+            _release_action_lock(lock_fd, lock_held)
 
 
 def main() -> int:

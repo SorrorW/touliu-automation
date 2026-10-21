@@ -468,6 +468,16 @@ async def force_plans_tab(page, tries: int = 12, interval_ms: int = 500) -> None
     带 hash 无效（启动时被持久态覆盖），只有 hashchange 软切生效。
     整页重载后必须重新拨——plan_metrics 的「整页重载重试」就靠这里补救。
     """
+    # Real tab clicks update SPA persisted state; changing the URL hash alone
+    # can be overwritten by a late managed-store restore (department 2).
+    try:
+        tab = page.get_by_role("tab", name="商品自选", exact=True)
+        if (await tab.count() and await tab.is_visible()
+                and await tab.get_attribute("aria-selected") != "true"):
+            await tab.click(timeout=3000)
+            await page.wait_for_timeout(500)
+    except Exception:
+        pass
     for i in range(tries):
         try:
             if await page.locator('input[placeholder*="计划名称"]').count():

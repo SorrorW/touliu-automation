@@ -381,7 +381,7 @@ class OldPoolResumeQueueTests(unittest.TestCase):
         names = {t["plan_name"] for t in summary["targets"]}
         self.assertEqual(names, {"due_today", "overdue"})
         # 已暂停计划当天可能无消耗，恢复时不能带时间筛选，否则会找不到
-        self.assertTrue(all(t["time_range"] is None for t in summary["targets"]))
+        self.assertTrue(all(t["time_range"] == "近180天含今天" for t in summary["targets"]))
         # dry-run 不动队列文件
         self.assertEqual(len(self._read_queue()), 4)
 
