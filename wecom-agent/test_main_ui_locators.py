@@ -49,6 +49,38 @@ class MainLocatorBrowserTests(unittest.IsolatedAsyncioTestCase):
   with self.assertRaisesRegex(RuntimeError,'入口不唯一'):await open_main_creator_drawer(self.page)
   self.assertIsNone(await self.page.evaluate('window.clicked'))
 
+ async def test_creator_search_accepts_explicit_empty_without_zero_footer(self):
+  from 巨量千川.main_product_bind import creator_row
+  await self.page.set_content('<div class="ovui-drawer"><input placeholder="请输入抖音号名称或ID搜索"><table><tbody></tbody></table><div class="ovui-table__empty-wrapper">暂无可选抖音号</div></div>')
+  _,row,text=await creator_row(self.page,'188545590')
+  self.assertIsNone(row);self.assertEqual(text,'')
+  self.assertEqual(await self.page.locator('input').input_value(),'188545590')
+
+ async def test_creator_search_empty_during_loading_waits_for_exact_result(self):
+  from 巨量千川.main_product_bind import creator_row
+  await self.page.set_content("""<div class="ovui-drawer"><input placeholder="请输入抖音号" onkeydown="if(event.key==='Enter'){setTimeout(()=>{document.querySelector('.ovui-spin__block').remove();document.querySelector('.ovui-table__empty-wrapper').remove();document.querySelector('tbody').innerHTML='<tr><td>ID：188545590</td></tr>';window.settled=true},700)}"><div class="ovui-spin__block" style="width:20px;height:20px">loading</div><table><tbody></tbody></table><div class="ovui-table__empty-wrapper">暂无可选抖音号</div></div>""")
+  _,row,text=await creator_row(self.page,'188545590')
+  self.assertTrue(await self.page.evaluate('window.settled'))
+  self.assertIsNotNone(row);self.assertIn('ID：188545590',text)
+
+ async def test_creator_search_stale_rows_are_not_an_empty_result(self):
+  from 巨量千川.main_product_bind import creator_row
+  await self.page.set_content("""<div class="ovui-drawer"><input placeholder="请输入抖音号" onkeydown="if(event.key==='Enter'){setTimeout(()=>{document.querySelector('tbody').innerHTML='';window.settled=true},700)}"><table><tbody><tr><td>ID：another_creator</td></tr></tbody></table><div class="ovui-table__empty-wrapper">暂无可选抖音号</div></div>""")
+  _,row,_=await creator_row(self.page,'188545590')
+  self.assertTrue(await self.page.evaluate('window.settled'));self.assertIsNone(row)
+
+ async def test_creator_search_never_accepts_partial_numeric_id(self):
+  from unittest.mock import patch
+  from playwright.async_api import TimeoutError
+  from 巨量千川.main_product_bind import creator_row
+  await self.page.set_content('<div class="ovui-drawer"><input placeholder="请输入抖音号"><table><tbody><tr><td>ID：1885455900</td></tr></tbody></table></div>')
+  original=self.page.wait_for_function
+  async def bounded(expression,**kwargs):
+   kwargs['timeout']=250
+   return await original(expression,**kwargs)
+  with patch.object(self.page,'wait_for_function',bounded):
+   with self.assertRaises(TimeoutError):await creator_row(self.page,'188545590')
+
  async def _run_bind_save_fixture(self,reopen_checked=None,changed_params=False,binding_found=True):
   from types import SimpleNamespace
   from unittest.mock import AsyncMock, patch

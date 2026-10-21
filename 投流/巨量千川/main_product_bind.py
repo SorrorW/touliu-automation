@@ -132,7 +132,9 @@ async def creator_row(page, creator):
         const ids=[...(r.innerText||'').matchAll(/ID[:：]\s*([A-Za-z0-9_.-]+)/g)].map(x=>x[1]);
         return ids.includes(creator);
       });
-      return (exact && (changed || current.every(x=>x===creator))) || (/共\s*0\s*条记录/.test(d.innerText) && /暂无|无搜索结果|未找到/.test(d.innerText));
+      // 达人选择抽屉的明确空态不展示“共0条”；加载中和残留行仍不得当成空结果。
+      const noSelectable = current.length===0 && /暂无可选抖音号/.test(d.innerText);
+      return (exact && (changed || current.every(x=>x===creator))) || noSelectable || (/共\s*0\s*条记录/.test(d.innerText) && /暂无|无搜索结果|未找到/.test(d.innerText));
     }""", arg={'creator':creator,'previous':previous_ids}, timeout=20000)
     await page.wait_for_timeout(400)
     matches = []
@@ -150,7 +152,7 @@ async def creator_row(page, creator):
     if not matches:
         # A visible search result container with explicit empty state is required.
         text = await drawer.inner_text()
-        if not any(x in text for x in ('暂无数据','暂无抖音号','暂无相关','未找到','无搜索结果','暂无搜索结果')):
+        if not any(x in text for x in ('暂无数据','暂无抖音号','暂无可选抖音号','暂无相关','未找到','无搜索结果','暂无搜索结果')):
             raise RuntimeError('达人搜索未完成或空态未确认')
         return drawer, None, ''
     return drawer, *matches[0]
