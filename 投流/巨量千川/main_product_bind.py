@@ -9,7 +9,7 @@ from playwright.async_api import async_playwright
 from .main_products import MAIN_AAVID, product_route, clean_id, verify_account
 from .main_pull_scout import read_target, _strip_plugin_overlays
 from .session_prepare import connect_browser, open_main_account_page
-from .plan_create import _open_creator_drawer, _disabled_reason
+from .plan_create import _disabled_reason
 from .commission_gate import (parse_commission_from_row_text, is_commission_blocked,
                               load_commission_max_pct, CommissionBlockedError)
 
@@ -84,10 +84,27 @@ async def disable_commission_before_bind(page,route,params):
         raise RuntimeError('取消佣金开关导致其他投放字段变化，未保存')
     return changed
 
+async def open_main_creator_drawer(page):
+    """既有主品只点精确管理入口；JS点击避开会重新出现的插件遮罩。"""
+    search=page.locator('.ovui-drawer:visible input[placeholder*="请输入抖音号"]:visible')
+    count=await search.count()
+    if count==1:return
+    if count>1:raise RuntimeError('存在多个达人管理搜索框，禁止猜测')
+    for label in ('管理手动添加抖音号','手动添加抖音号','添加抖音号'):
+        entry=page.get_by_text(label,exact=True).filter(visible=True)
+        count=await entry.count()
+        if count>1:raise RuntimeError('主品达人管理入口不唯一，未点击')
+        if not count:continue
+        await entry.evaluate('el=>el.click()')
+        await search.wait_for(state='visible',timeout=15000)
+        if await search.count()!=1:raise RuntimeError('达人管理抽屉未唯一打开')
+        return
+    raise RuntimeError('主品达人管理入口未找到，未修改计划')
+
 async def creator_row(page, creator):
     if not re.fullmatch(r'[A-Za-z0-9_.-]{1,64}', creator):
         raise ValueError('抖音号格式异常，待人工处理')
-    await _open_creator_drawer(page)
+    await open_main_creator_drawer(page)
     drawers = page.locator('.ovui-drawer')
     drawer = None
     for i in range(await drawers.count()):
@@ -194,6 +211,8 @@ async def bind(creator, route):
             await confirm.click(timeout=5000)
             await drawer.wait_for(state='hidden', timeout=12000)
             await assert_editor(page, route)
+            # 平台确认新达人时会自动重新启用含佣出价，保存前必须再次取消。
+            commission_changed = await disable_commission_before_bind(page, route, params) or commission_changed
             if await parameter_snapshot(page, ignore_commission=True)!=params:
                 raise RuntimeError('检测到计划参数变化，已中止保存')
             save = page.get_by_role('button', name='保存', exact=True)
