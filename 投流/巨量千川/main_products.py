@@ -46,5 +46,30 @@ def check_identity(url, body, account_id=MAIN_AAVID, plan_id=None):
 
 async def verify_account(page, account_id=MAIN_AAVID, plan_id=None):
     body = await page.locator("body").inner_text()
-    check_identity(page.url, body, account_id, plan_id)
+    try:
+        check_identity(page.url, body, account_id, plan_id)
+    except RuntimeError:
+        query = parse_qs(urlsplit(page.url).query)
+        ids = re.findall(r"ID[:：]\s*([0-9A-Za-z_]+)", body[:1800])
+        # Only the observed loading shell may wait. A visible wrong identity
+        # must fail immediately, and the URL alone never proves the plan.
+        loading = (plan_id and query.get("aavid") == [account_id]
+                   and query.get("adId") == [plan_id] and "/login" not in page.url
+                   and ids == [account_id] and "加载中" in body)
+        if not loading:
+            raise
+        try:
+            await page.wait_for_function(r"""expected => {
+                const url = new URL(location.href);
+                if (url.searchParams.get('aavid') !== expected.account
+                    || url.searchParams.get('adId') !== expected.plan
+                    || url.pathname.includes('/login')) return true;
+                const text = (document.body && document.body.innerText) || '';
+                const ids = [...text.slice(0, 1800).matchAll(/ID[:：]\s*([0-9A-Za-z_]+)/g)].map(m => m[1]);
+                return ids.length > 1 || (ids.length && ids[0] !== expected.account);
+            }""", arg={"account": account_id, "plan": plan_id}, timeout=30000)
+        except Exception as exc:
+            raise RuntimeError("平台计划 ID 未核实（等待页面加载超时），禁止提交") from exc
+        body = await page.locator("body").inner_text()
+        check_identity(page.url, body, account_id, plan_id)
     return body
