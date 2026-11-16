@@ -1051,8 +1051,8 @@ async def search_plan_metrics(
 
 
 async def _read_pagination_total(page) -> Optional[int]:
-    """Read '共 N 条记录' from the table pagination; None if not found."""
-    pager = page.locator(".oc-table-pagination").first
+    """Read '共 N 条记录' from legacy or Aurora pagination; None if not found."""
+    pager = page.locator(".oc-table-pagination, .aurora-qc-pagination").first
     if not await pager.count():
         return None
     text = await pager.inner_text()
@@ -1060,16 +1060,54 @@ async def _read_pagination_total(page) -> Optional[int]:
     return int(match.group(1)) if match else None
 
 
+async def _click_page_and_wait(page, btn, error_message: str) -> None:
+    """点击页码并等真实数据行替换，避免在 DOM 切换期读表。"""
+    first_data_row_js = r"""() => {
+        const rows = Array.from(document.querySelectorAll('table tbody tr'))
+            .filter(row => row.getClientRects().length > 0);
+        const row = rows.find(item =>
+            /ID[：:]\s*\d+/.test(item.innerText || ''));
+        return row ? (row.innerText || '').trim() : '';
+    }"""
+    previous_text = await page.evaluate(first_data_row_js)
+    await btn.evaluate('e => e.click()')
+    await page.wait_for_timeout(800)
+
+    # 后台 Edge 标签页的 wait_for_function 可能到超时也不执行；沿用本模块
+    # 既有的 Python 定时检查，翻页期间 DOM 异常只等待重试，不直接读整表。
+    deadline = time.monotonic() + 45
+    while time.monotonic() < deadline:
+        try:
+            current_text = await page.evaluate(first_data_row_js)
+            if current_text and (not previous_text or current_text != previous_text):
+                return
+        except Exception:
+            pass
+        await page.wait_for_timeout(500)
+    raise RuntimeError(f"{error_message}（45s）")
+
+
+async def _goto_first_page(page) -> None:
+    """全量扫描前回到第一页，避免复用上次停留的末页而漏读。"""
+    btn = page.locator("li[title='1']").first
+    if not await btn.count():
+        return
+    cls = await btn.get_attribute("class") or ""
+    if "active" in cls:
+        return
+    await _click_page_and_wait(page, btn, "返回第一页后计划数据未就绪或页面未更新")
+
+
 async def _goto_next_page(page) -> bool:
-    """Click the pagination next button; False when absent or disabled."""
-    btn = page.locator(".ovui-pagination-next, li[title='下一页']").first
+    """Click next and wait until its real data rows replace the previous page."""
+    btn = page.locator(".ovui-pagination-next, li[title='下一页'], .oc-page-switch-icon[name='oc-icon-right']:not(.oc-page-switch-icon-disabled)").first
     if not await btn.count():
         return False
     cls = await btn.get_attribute("class") or ""
-    if "disabled" in cls:
+    aria_disabled = await btn.get_attribute("aria-disabled") or ""
+    if "disabled" in cls or aria_disabled.lower() == "true":
         return False
-    await btn.click()
-    await page.wait_for_timeout(800)
+    await _click_page_and_wait(page, btn, "下一页计划数据未就绪或页面未更新")
     return True
 
 
@@ -1087,20 +1125,36 @@ def _department_overview_page(pages, account_id: str):
     )
 
 
-async def _wait_plan_table_ready(page, timeout_s: float = 15.0) -> bool:
+_PLAN_SUMMARY_ROW_RE = re.compile(r"^\s*共\s*[\d,]+\s*条计划(?:\s|$)")
+_PLAN_ID_TEXT_RE = re.compile(r"ID[：:]\s*\d+")
+
+
+def _is_plan_summary_text(text: str) -> bool:
+    """识别表格顶部「共 N 条计划」汇总行；它不是计划数据行。"""
+    return bool(_PLAN_SUMMARY_ROW_RE.match(text or ""))
+
+
+def _is_plan_data_text(text: str) -> bool:
+    """只认带数字计划 ID 的数据行，排除 tbody 表头和汇总行。"""
+    return bool(_PLAN_ID_TEXT_RE.search(text or ""))
+
+
+async def _wait_plan_table_ready(page, timeout_s: float = 45.0) -> bool:
     """等总览页计划表格渲染完成：可见数据行 / 空态「暂无数据」/ 分页器共0条 任一出现。
 
     2026-09-08 业务1部-1 静默空扫根因：ensure_qianchuan_page 的 aavid 兜底只保证
     「落在正确账号上下文」（09-02 为零计划账号授权流设计），不保证总览表格已渲染
     ——矩阵账号导航后可能停在乘方营销首页，无表格无分页器，旧逻辑 30s 等不到行
     就静默返回 []，17:10/23:00 暂停链因此漏掉整个部门（无任何日志）。
+    2026-11-10：tbody 表头、汇总行会早于真实计划行渲染，均不能作为就绪依据。
     """
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         try:
             trs = page.locator("table tbody tr")
             for i in range(await trs.count()):
-                if await trs.nth(i).is_visible():
+                tr = trs.nth(i)
+                if await tr.is_visible() and _is_plan_data_text(await tr.inner_text()):
                     return True
             empties = page.locator('[class*="empty"]')
             for i in range(await empties.count()):
@@ -1118,9 +1172,19 @@ async def _wait_plan_table_ready(page, timeout_s: float = 15.0) -> bool:
 
 
 async def _visible_plan_rows(page):
-    """在浏览器内筛选可见行，避免每行一次 is_visible 往返。"""
+    """筛选可见计划数据行，排除 tbody 表头和「共 N 条计划」汇总行。"""
     rows = page.locator("table tbody tr:visible")
-    return [rows.nth(i) for i in range(await rows.count())]
+    visible = []
+    for i in range(await rows.count()):
+        row = rows.nth(i)
+        try:
+            if not _is_plan_data_text(await row.inner_text()):
+                continue
+        except Exception:
+            # 行句柄短暂回收时交给既有 _parse_plan_row 重读逻辑处理。
+            pass
+        visible.append(row)
+    return visible
 
 
 async def list_all_plans(
@@ -1173,6 +1237,9 @@ async def list_all_plans(
                     await page.wait_for_timeout(800)
                 break
 
+        # 总览页会被上一轮扫描复用；若上轮停在第 2 页，先回第 1 页再全量去重。
+        await _goto_first_page(page)
+
         results: list[PlanMetrics] = []
         seen: set[str] = set()
 
@@ -1192,9 +1259,13 @@ async def list_all_plans(
                 total = await _read_pagination_total(page)
                 if total is None or len(seen) >= total:
                     break
-                if not await _goto_next_page(page):
-                    break
-                continue
+                if await _goto_next_page(page):
+                    continue
+                # 分页明确有计划却不能读到数据行时，交给上层报错复扫；
+                # 不能把汇总行/半渲染状态静默记成空部门。
+                raise RuntimeError(
+                    f"计划数据行未就绪或全部畸形（已读 {len(seen)}/{total}）"
+                )
 
             # 预计算列标签（同一页所有行共享表头，避免每行重复 CDP 往返）
             labels = None
@@ -1226,6 +1297,11 @@ async def list_all_plans(
             if not await _goto_next_page(page):
                 break
 
+        # 末页按钮不可用不代表已经读全；虚拟表格瞬态漏行时必须让上层复扫，
+        # 不能把 110/112 这类残缺结果静默送入日报。
+        final_total = await _read_pagination_total(page)
+        if final_total is not None and len(seen) < final_total:
+            raise RuntimeError(f"计划数据不完整（已读 {len(seen)}/{final_total}）")
         return results
 
 
