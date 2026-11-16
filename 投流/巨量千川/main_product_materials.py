@@ -168,15 +168,21 @@ async def _select_manual_creator(picker,journal,creator):
     start=len(journal.rows)
     try:
         await tab.click(timeout=3000)
-    except PlaywrightTimeoutError as exc:
-        # 横向标签箭头会挡住已经核实唯一身份的标签；只处理这一种遮挡。
-        if 'intercepts pointer events' not in str(exc):raise
-        await tab.evaluate("""el => {
-          const root=el.closest('[role="tab"],.ovui-tabs__tab-btn')||el;
-          if(root.getAttribute('aria-disabled')==='true'||root.hasAttribute('disabled')||/disabled/.test(root.className||''))
-            throw new Error('达人视频标签不可用，未选择');
-          el.click();
-        }""")
+    except PlaywrightTimeoutError:
+        # 达人多的时候横向标签条把标签挤出可视区（坐标为负、滚动不到），
+        # 或被横向箭头遮挡——唯一身份已核实（uid+昵称+条数唯一），
+        # 滚入可视区原生点击，再失败 JS 直点；点错标签会在后续素材请求
+        # 按精确 uid 校验时被拦下，不会补错素材。
+        try:
+            await tab.scroll_into_view_if_needed(timeout=2000)
+            await tab.click(timeout=3000)
+        except PlaywrightTimeoutError:
+            await tab.evaluate("""el => {
+              const root=el.closest('[role="tab"],.ovui-tabs__tab-btn')||el;
+              if(root.getAttribute('aria-disabled')==='true'||root.hasAttribute('disabled')||/disabled/.test(root.className||''))
+                throw new Error('达人视频标签不可用，未选择');
+              el.click();
+            }""")
     return next(iter(uids)),start
 
 async def _open_picker(page,route):
@@ -194,7 +200,12 @@ async def _open_picker(page,route):
     }""",arg=route.product_id,timeout=15000)
     if not await _js_click_text(page,'素材'):raise MaterialReadError('目标主品没有素材入口')
     button=page.get_by_role('button',name=re.compile('添加视频'))
-    await button.wait_for(state='visible',timeout=15000);await button.click(timeout=8000)
+    await button.wait_for(state='visible',timeout=15000)
+    # 2026-11-16：达人无可用视频时按钮 disabled，直接 click 会超时 8s，
+    # 先检测 disabled 状态，避免无效等待。
+    if await button.evaluate("""e => e.disabled || !!e.closest('[disabled],[aria-disabled="true"]')"""):
+        raise MaterialReadError('该商品暂无可用视频，添加视频按钮已禁用')
+    await button.click(timeout=8000)
     await page.get_by_text('自动拉取的抖音号',exact=True).filter(visible=True).click(timeout=10000)
     picker=page.locator('.ovui-drawer:visible').last
     await picker.wait_for(state='visible',timeout=8000)
@@ -260,13 +271,13 @@ async def _video_page(journal,route,uid,start):
     return data,usage
 
 async def _advance_video_page(picker):
-    nexts=picker.locator('[class*="pagination"] [class*="next"]:not([class*="ellipsis"]),li[title="下一页"]')
+    nexts=picker.locator('[class*="pagination"] [class*="next"]:not([class*="ellipsis"]),li[title="下一页"],.oc-page-switch-icon[name="oc-icon-right"]')
     for i in range(await nexts.count()):
         nxt=nexts.nth(i)
         if not await nxt.is_visible():continue
         if await nxt.evaluate("""e=>!!e.closest('[disabled],[aria-disabled="true"],[class*="disabled"]')"""):
             raise MaterialReadError('接口仍有下一页但分页按钮不可用')
-        await nxt.click(timeout=6000)
+        await nxt.evaluate('e => e.click()')
         return
     cards=picker.locator('[data-auto-id="create-material-card"]')
     await cards.first.wait_for(state='visible',timeout=12000)
