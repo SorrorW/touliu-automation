@@ -22,7 +22,13 @@ import re
 import argparse
 
 _PRODUCT_IDS = set(PRODUCT_MAP.values())
-CREATOR_NEXT_SELECTOR = '[class*="pagination"] [class*="next"]:not([class*="ellipsis"]), li[title="下一页"]'
+# 2026-11-16 Edge 157 分页组件改版：旧 [class*="pagination"] [class*="next"] 不再匹配，
+# 新版为 <iconpark-icon class="oc-page-switch-icon" name="oc-icon-right">，disabled 加 -disabled 后缀。
+CREATOR_NEXT_SELECTOR = (
+    '[class*="pagination"] [class*="next"]:not([class*="ellipsis"]), '
+    'li[title="下一页"], '
+    '.oc-page-switch-icon[name="oc-icon-right"]'
+)
 
 
 async def _strip_plugin_overlays(page) -> None:
@@ -125,7 +131,9 @@ async def _read_plan_creators(page, plan_id: str) -> list[str]:
             if len(rows) != total:
                 raise RuntimeError(f"主号分页不完整: 已读{len(rows)}/总数{total}")
             return rows
-        await nxt.click(timeout=5000)
+        # 2026-11-16 Edge 157 抽屉遮罩遮挡分页按钮，Playwright click 被 intercept，
+        # 改 JS click 绕过遮挡检测（实测翻页正常）。
+        await nxt.evaluate('e => e.click()')
         await page.wait_for_function(r"""previous => {
           const ids=[...document.querySelectorAll('table tbody tr')]
             .filter(e=>e.offsetWidth>0&&e.offsetHeight>0)
@@ -211,7 +219,8 @@ async def _read_plan_oplog(page, plan_id: str, max_pages: int = 3) -> list[str]:
                 hits.append(t)
         nxt = page.locator(
             '[class*="pagination"] [class*="next"]:not([class*="disabled"]), '
-            'li[title="下一页"]:not([class*="disabled"])').first
+            'li[title="下一页"]:not([class*="disabled"]), '
+            '.oc-page-switch-icon[name="oc-icon-right"]:not(.oc-page-switch-icon-disabled)').first
         try:
             if await nxt.count() and await nxt.is_visible():
                 cls = await nxt.get_attribute("class") or ""
@@ -226,11 +235,11 @@ async def _read_plan_oplog(page, plan_id: str, max_pages: int = 3) -> list[str]:
     return hits
 
 
-async def scrape(with_oplog: bool = False, product_ids=None) -> dict:
+async def scrape(with_oplog: bool = False, product_ids=None, with_exclusions: bool = False) -> dict:
     targets = list(MAIN_PRODUCTS) if product_ids is None else [product_route(x) for x in product_ids]
     if any(t is None for t in targets):
         raise ValueError("未知主品商品ID")
-    out, oplogs, scans = [], {}, []
+    out, oplogs, scans, exclusions = [], {}, [], {}
     async with async_playwright() as pw:
         browser = await connect_browser(pw)
         page = await open_main_account_page(browser.contexts[0])
@@ -241,24 +250,32 @@ async def scrape(with_oplog: bool = False, product_ids=None) -> dict:
                 scans.append({k:v for k,v in scan.items() if k != "rows"})
                 if with_oplog:
                     oplogs[route.name] = await _read_plan_oplog(page, route.plan_id)
+                if with_exclusions:
+                    from .main_product_exclude import audit_exclusions
+                    try:
+                        exclusions[route.name] = await audit_exclusions(page, route)
+                    except Exception as exc:
+                        # 读取失败也必须显式上报，不能把「没读到」当成「名单正常」。
+                        exclusions[route.name] = {"plan_id": route.plan_id, "error": str(exc)[:300]}
         finally:
             await page.close()
-    return {"rows": out, "oplogs": oplogs, "scans": scans, "complete": True}
+    return {"rows": out, "oplogs": oplogs, "scans": scans, "exclusions": exclusions, "complete": True}
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--with-oplog", action="store_true")
+    parser.add_argument("--with-exclusions", action="store_true")
     parser.add_argument("--product", action="append")
     args = parser.parse_args()
     if main_browser_lock_owned():
-        result = asyncio.run(scrape(with_oplog=args.with_oplog, product_ids=args.product))
+        result = asyncio.run(scrape(with_oplog=args.with_oplog, product_ids=args.product, with_exclusions=args.with_exclusions))
     else:
         from pathlib import Path
         sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'wecom-agent'))
         from main_account_flow import browser_guard
         with browser_guard():
-            result = asyncio.run(scrape(with_oplog=args.with_oplog, product_ids=args.product))
+            result = asyncio.run(scrape(with_oplog=args.with_oplog, product_ids=args.product, with_exclusions=args.with_exclusions))
     print(json.dumps(result, ensure_ascii=False))
     return 0
 
