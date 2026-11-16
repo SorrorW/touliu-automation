@@ -351,13 +351,14 @@ async def scan_aweme_commissions(department: str, page=None) -> dict[str, dict]:
                           "raw": text[:120]}
         # 翻页：找「下一页」按钮，禁用即停（选择器需探针校准）
         next_btn = page.locator(
-            'button:has-text("下一页"), .bui-pagination-next, li[title="下一页"]').first
+            'button:has-text("下一页"), .bui-pagination-next, li[title="下一页"], '
+            '.oc-page-switch-icon[name="oc-icon-right"]:not(.oc-page-switch-icon-disabled)').first
         try:
             disabled = await next_btn.get_attribute("disabled")
             cls = (await next_btn.get_attribute("class")) or ""
             if disabled is not None or "disabled" in cls:
                 break
-            await next_btn.click()
+            await next_btn.evaluate('e => e.click()')
             await page.wait_for_timeout(1500)
         except Exception:
             break  # 无分页/翻页失败 → 用已读到的
