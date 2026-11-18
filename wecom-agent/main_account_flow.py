@@ -207,9 +207,14 @@ class Workflow:
             # Result unknown is never a business failure or a completion checkpoint.
             progress='待加入素材' if step=='主品素材核验' else ('待加入主品' if step=='加入主品' else '待主号授权')
             previous=str(simple.get('进度') or '')
-            if step in ('主品完整扫描','达人身份核验') and previous in BOUND|{'待人工处理','等待达人接受','达人未确认授权','待加入主品','待加入素材'}:
+            if step in ('主品完整扫描','达人身份核验','主品素材核验') and previous in BOUND|{'待人工处理','等待达人接受','达人未确认授权','待加入主品','待加入素材'}:
                 progress='等待达人接受' if previous=='达人未确认授权' else previous
                 # 列表读取失败不能证明授权失效，保留已知进度并记录本次阻塞。
+                # 2026-11-18 止损：素材核验阶段原漏在白名单外，平台改版后
+                # 「添加视频」按钮 disabled 抛 MaterialReadError，会把已完成的
+                # 「主号已加入/已拉取」批量误降级成「待加入素材」（11-16 09:28 起
+                # 实证 94 条）。真正的「无可用视频」走 ensure_materials 正常返回
+                # verified=False（第 197 行），仍会正确标「待加入素材」，不受此保护影响。
             if any(x in detail for x in ('平台限制','平台预检','被拒','合作码','用户不存在','权限')):
                 progress='待人工处理'
             if '佣金过高' in detail:

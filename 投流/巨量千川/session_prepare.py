@@ -460,6 +460,45 @@ async def _verify_account(page: Page, account: str, deadline: float) -> None:
 # ---------------------------------------------------------------------------
 
 
+async def _ensure_plan_view(page) -> None:
+    """2026-11-18 千川灰度改版：/overall-prom 新增顶层「商品视图 / 计划视图」Tab，
+    由 hash `overallPromViewTab=product|plan` 驱动，并按账号 SPA 持久态记忆。
+
+    落在「商品视图」时页面只有「输入商品名称/ID」搜索框 + 商品维度表格，
+    计划表格与「计划名称」搜索框整体不渲染 —— 扫描会报「总览表格未渲染」。
+    真实点击「计划视图」Tab 会更新 SPA 持久态（比改 hash 可靠），
+    hash 软切仅作兜底。幂等：已在计划视图时零动作。
+    """
+    try:
+        if await page.locator('input[placeholder*="计划名称"]').count():
+            return
+    except Exception:
+        pass
+    # 1) 真实点击顶层「计划视图」Tab（更新平台持久态，整页 reload 后仍有效）
+    try:
+        tab = page.get_by_role("tab", name="计划视图", exact=True)
+        if await tab.count() and await tab.is_visible():
+            if await tab.get_attribute("aria-selected") != "true":
+                await tab.click(timeout=3000)
+                await page.wait_for_timeout(800)
+                return
+    except Exception:
+        pass
+    # 2) 兜底：hash 软切（SPA 路由已注册时生效）
+    try:
+        await page.evaluate(
+            """() => {
+                const h = new URLSearchParams(location.hash.slice(2));
+                if (h.get('overallPromViewTab') !== 'plan') {
+                    h.set('overallPromViewTab', 'plan');
+                    location.hash = '#?' + h.toString();
+                }
+            }"""
+        )
+    except Exception:
+        pass
+
+
 async def force_plans_tab(page, tries: int = 12, interval_ms: int = 500) -> None:
     """把乘方总览页的子 Tab 软切回计划Tab（uniVideoTab=1），直到表格/搜索框出现。
 
@@ -470,6 +509,8 @@ async def force_plans_tab(page, tries: int = 12, interval_ms: int = 500) -> None
     """
     # Real tab clicks update SPA persisted state; changing the URL hash alone
     # can be overwritten by a late managed-store restore (department 2).
+    # 2026-11-18 新版：先确保落在「计划视图」（商品视图不渲染计划表格）。
+    await _ensure_plan_view(page)
     try:
         tab = page.get_by_role("tab", name="商品自选", exact=True)
         if (await tab.count() and await tab.is_visible()
@@ -478,27 +519,45 @@ async def force_plans_tab(page, tries: int = 12, interval_ms: int = 500) -> None
             await page.wait_for_timeout(500)
     except Exception:
         pass
+    # 新版「商品自选」已从 role=tab 变成 radio-button，旧定位失配；
+    # 默认已勾选，仅在未勾选时补点（绝不点「全域托管」）。
+    try:
+        radio = page.locator('[class*="radio-button-wrapper"]:has-text("商品自选")').first
+        if (await radio.count() and await radio.is_visible()
+                and "checked" not in (await radio.get_attribute("class") or "")):
+            await radio.click(timeout=3000)
+            await page.wait_for_timeout(500)
+    except Exception:
+        pass
     for i in range(tries):
         try:
+            # 就绪判据只能是「计划名称」搜索框：2026-11-18 起「商品视图」
+            # 同样有 table tbody tr（商品行），旧的两条判据会误判成功、
+            # 让调用方拿着商品表格去读计划 → 报「总览表格未渲染」。
             if await page.locator('input[placeholder*="计划名称"]').count():
                 return
-            if await page.locator("table tbody tr").count():
-                return
+            await _ensure_plan_view(page)
             await page.evaluate(
                 """() => {
                     const h = new URLSearchParams(location.hash.slice(2));
+                    let dirty = false;
                     if (h.get('uniVideoTab') !== '1') {
-                        h.set('uniVideoTab', '1');
-                        location.hash = '#?' + h.toString();
+                        h.set('uniVideoTab', '1'); dirty = true;
                     }
+                    if (h.get('overallPromViewTab') !== 'plan') {
+                        h.set('overallPromViewTab', 'plan'); dirty = true;
+                    }
+                    if (dirty) location.hash = '#?' + h.toString();
                 }"""
             )
             if i in (4, 8):
-                # 首次 hashchange 可能赶在 SPA 路由注册前被吞——强制 2→1 再触发一次
+                # 首次 hashchange 可能赶在 SPA 路由注册前被吞——强制 2→1、
+                # product→plan 再触发一次（覆盖平台持久态回拨）。
                 await page.evaluate(
                     """() => {
                         const h = new URLSearchParams(location.hash.slice(2));
                         h.set('uniVideoTab', '2');
+                        h.set('overallPromViewTab', 'product');
                         location.hash = '#?' + h.toString();
                     }"""
                 )
@@ -507,6 +566,7 @@ async def force_plans_tab(page, tries: int = 12, interval_ms: int = 500) -> None
                     """() => {
                         const h = new URLSearchParams(location.hash.slice(2));
                         h.set('uniVideoTab', '1');
+                        h.set('overallPromViewTab', 'plan');
                         location.hash = '#?' + h.toString();
                     }"""
                 )
@@ -574,6 +634,9 @@ async def ensure_qianchuan_page(page: Page, department: str = "业务3部", time
         for _try in range(20):
             if _try in (0, 5, 10):
                 await dismiss_popups(page)
+            # 2026-11-18 新版顶层「商品视图/计划视图」：商品视图下无
+            # 「计划名称」搜索框，先切回计划视图，避免 20 轮空等 + aavid 兜底误返回。
+            await _ensure_plan_view(page)
             for sel in [
                 'input[placeholder*="抖音号"]',
                 'input[placeholder*="计划名称"]',
@@ -590,10 +653,14 @@ async def ensure_qianchuan_page(page: Page, department: str = "业务3部", time
                     await page.evaluate(
                         """() => {
                             const h = new URLSearchParams(location.hash.slice(2));
+                            let dirty = false;
                             if (h.get('uniVideoTab') !== '1') {
-                                h.set('uniVideoTab', '1');
-                                location.hash = '#?' + h.toString();
+                                h.set('uniVideoTab', '1'); dirty = true;
                             }
+                            if (h.get('overallPromViewTab') !== 'plan') {
+                                h.set('overallPromViewTab', 'plan'); dirty = true;
+                            }
+                            if (dirty) location.hash = '#?' + h.toString();
                         }"""
                     )
                 except Exception:
@@ -605,6 +672,7 @@ async def ensure_qianchuan_page(page: Page, department: str = "业务3部", time
                         """() => {
                             const h = new URLSearchParams(location.hash.slice(2));
                             h.set('uniVideoTab', '2');
+                            h.set('overallPromViewTab', 'product');
                             location.hash = '#?' + h.toString();
                         }"""
                     )
@@ -613,6 +681,7 @@ async def ensure_qianchuan_page(page: Page, department: str = "业务3部", time
                         """() => {
                             const h = new URLSearchParams(location.hash.slice(2));
                             h.set('uniVideoTab', '1');
+                            h.set('overallPromViewTab', 'plan');
                             location.hash = '#?' + h.toString();
                         }"""
                     )

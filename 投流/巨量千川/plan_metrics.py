@@ -679,11 +679,11 @@ async def _search_plans(page, keyword: str, department: str = DEFAULT_DEPARTMENT
     # 2026-10-12 一部账号实证：总览落地默认乘方推广页（无搜索框、无计划行），
     # 点「商品自选」tab 才渲染计划列表+筛选条。搜索框缺失时先补点 tab（幂等）。
     if not await page.locator('input[placeholder*="计划名称"]').count():
+        # 2026-11-18 新版：顶层「计划视图」+「商品自选」radio，旧的
+        # `[class*="tab"]:has-text("商品自选")` 已失配（且表格行里也有同名文本，
+        # 会误点）。统一复用 force_plans_tab 的视图切换逻辑。
         try:
-            tab = page.locator('[class*="tab"]:has-text("商品自选")').first
-            if await tab.count() and await tab.is_visible():
-                await tab.click(timeout=3000)
-                await page.wait_for_timeout(3000)
+            await force_plans_tab(page)
         except Exception:
             pass
 
